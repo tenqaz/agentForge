@@ -1,113 +1,113 @@
-# AgentForge MVP Design
+# AgentForge MVP 设计规格
 
-Date: 2026-06-12
+日期：2026-06-12
 
-## Summary
+## 摘要
 
-AgentForge MVP provides a closed loop for users to create an Agent from an administrator-managed template, wait for the Hermes runtime to start, connect the Agent to Weixin by scanning a QR code, and chat with the Agent in Weixin.
+AgentForge MVP 提供一个完整闭环：用户从管理员维护的 Agent 模板创建自己的 Agent，等待 Hermes 运行时启动成功，然后通过微信扫码连接该 Agent，并在微信中与 Agent 聊天。
 
-The MVP intentionally excludes user-uploaded skills, user editing of `SOUL.md` or `USER.md`, team workspaces, template marketplace features, and additional channels such as QQ, Telegram, or WeCom. Those can be added after the first Hermes + Weixin runtime path is stable.
+MVP 明确不包含普通用户上传 skills、普通用户编辑 `SOUL.md` 或 `USER.md`、团队空间、模板市场，以及 QQ、Telegram、WeCom 等其他渠道。这些能力可以在 Hermes + 微信运行链路稳定后再加入。
 
-## Confirmed Scope
+## 已确认范围
 
-- The frontend uses Next.js.
-- The backend uses Go.
-- SQLite is the metadata database and must run with WAL enabled.
-- Hermes is reused as the Agent runtime.
-- Each user-created Agent gets its own Hermes container and independent `HERMES_HOME`.
-- The first channel is Weixin personal account QR-code login.
-- The platform is a lightweight multi-user product.
-- Only administrators can create and publish Agent templates.
-- Ordinary users can create Agents only from published templates.
-- Ordinary users cannot edit template-provided `SOUL.md`, `USER.md`, or skills.
-- Ordinary users cannot upload or select custom skills in the MVP.
-- Channel configuration is available only after the Agent runtime has started successfully.
+- 前端使用 Next.js。
+- 后端使用 Go。
+- 元数据数据库使用 SQLite，并开启 WAL。
+- Agent 运行时复用 Hermes。
+- 每个用户创建的 Agent 都有独立 Hermes 容器和独立 `HERMES_HOME`。
+- 第一版通讯渠道是个人微信扫码登录。
+- 平台是轻量多用户产品。
+- 只有管理员可以创建和发布 Agent 模板。
+- 普通用户只能基于已发布模板创建 Agent。
+- 普通用户不能编辑模板提供的 `SOUL.md`、`USER.md` 或 skills。
+- 普通用户在 MVP 中不能上传或选择自定义 skills。
+- 渠道配置只能在 Agent 运行时启动成功后开放。
 
-## Hermes Constraints
+## Hermes 约束
 
-Hermes documentation describes:
+Hermes 官方文档说明了以下能力：
 
-- `SOUL.md` for personality configuration.
-- `USER.md` and memory-related files for persistent user context.
-- A skills system based on skill directories and `SKILL.md`.
-- A messaging gateway that supports Weixin, WeCom, QQ Bot, Telegram, and other platforms.
-- `hermes gateway setup` as the interactive path for configuring messaging platforms.
-- Gateway runtime behavior where platform adapters receive messages, route them through chat sessions, and dispatch them to the Agent.
+- `SOUL.md` 用于人格配置。
+- `USER.md` 和记忆相关文件用于持久用户上下文。
+- skills 系统基于 skill 目录和 `SKILL.md`。
+- 消息网关支持 Weixin、WeCom、QQ Bot、Telegram 等平台。
+- `hermes gateway setup` 是配置消息平台的交互式入口。
+- gateway 运行时由平台适配器接收消息，通过聊天会话路由，并分发给 Agent 处理。
 
-AgentForge should treat Hermes as the runtime boundary. The Go backend controls lifecycle, filesystem preparation, container operations, and status tracking, but the Hermes process owns actual Agent execution, gateway operation, and chat handling.
+AgentForge 应把 Hermes 作为运行时边界。Go 后端负责生命周期、文件系统准备、容器操作和状态跟踪；Hermes 进程负责真实 Agent 执行、gateway 运行和聊天处理。
 
-## Architecture
+## 架构
 
-The system has three main boundaries.
+系统分为三个主要边界。
 
-### Next.js Console
+### Next.js 控制台
 
-The console provides:
+控制台提供：
 
-- Login and session UI.
-- Template list for ordinary users.
-- Agent creation from a template.
-- Agent list and detail pages.
-- Runtime status display.
-- Weixin channel setup page.
-- QR-code display and connection status.
-- Administrator pages for template management.
+- 登录和会话 UI。
+- 普通用户可见的模板列表。
+- 基于模板创建 Agent。
+- Agent 列表和详情页。
+- 运行时状态展示。
+- 微信渠道配置页。
+- 二维码展示和连接状态。
+- 管理员模板管理页面。
 
-The console does not directly manipulate Hermes files or containers. All runtime actions go through the Go API.
+控制台不直接操作 Hermes 文件或容器。所有运行时动作都通过 Go API 完成。
 
-### Go API and Worker
+### Go API 与 Worker
 
-The Go backend provides:
+Go 后端提供：
 
-- Authentication and authorization.
-- Role-based access control for `admin` and `user`.
-- SQLite persistence with WAL enabled.
-- Template metadata and version management.
-- Agent instance creation.
-- Hermes home directory preparation.
-- Hermes container lifecycle management.
-- Weixin channel setup orchestration.
-- Runtime and channel status synchronization.
-- Event logging for provisioning and troubleshooting.
+- 认证和授权。
+- `admin` 与 `user` 的角色权限控制。
+- 开启 WAL 的 SQLite 持久化。
+- 模板元数据和版本管理。
+- Agent 实例创建。
+- Hermes home 目录准备。
+- Hermes 容器生命周期管理。
+- 微信渠道配置编排。
+- 运行时和渠道状态同步。
+- 创建、启动和排障事件日志。
 
-Long-running operations must be performed by worker tasks, not request handlers. API calls create records, validate permissions, enqueue work, and return current state.
+长耗时操作必须由 worker 任务执行，不能在请求处理器里阻塞完成。API 请求只负责创建记录、校验权限、投递任务并返回当前状态。
 
-### Hermes Runtime
+### Hermes 运行时
 
-Each Agent has one independent Hermes container. The container receives:
+每个 Agent 对应一个独立 Hermes 容器。容器接收：
 
-- A dedicated `HERMES_HOME`.
-- Template-provided `SOUL.md`, `USER.md`, Hermes config fragments, and skills.
-- Runtime configuration needed for model/provider access.
-- Gateway configuration for Weixin after the user starts channel setup.
+- 专用 `HERMES_HOME`。
+- 模板提供的 `SOUL.md`、`USER.md`、Hermes 配置片段和 skills。
+- 模型或 provider 访问所需的运行时配置。
+- 用户启动微信渠道配置后生成的 gateway 配置。
 
-The platform should not share Hermes home directories across Agents or users.
+平台不能在不同 Agent 或不同用户之间共享 Hermes home 目录。
 
-## Data Model
+## 数据模型
 
 ### `users`
 
-Stores account identity and role.
+保存账号身份和角色。
 
-Important fields:
+重要字段：
 
 - `id`
 - `email`
-- `password_hash` or external auth subject
-- `role`: `admin` or `user`
+- `password_hash` 或外部认证 subject
+- `role`：`admin` 或 `user`
 - `created_at`
 - `updated_at`
 
 ### `agent_templates`
 
-Stores administrator-managed template metadata.
+保存管理员维护的模板元数据。
 
-Important fields:
+重要字段：
 
 - `id`
 - `name`
 - `description`
-- `status`: `draft`, `published`, `archived`
+- `status`：`draft`、`published`、`archived`
 - `version`
 - `template_path`
 - `content_checksum`
@@ -116,13 +116,13 @@ Important fields:
 - `updated_at`
 - `published_at`
 
-Published templates should be immutable. Editing a published template creates a new version so existing Agents remain reproducible.
+已发布模板应保持不可变。编辑已发布模板时创建新版本，保证已有 Agent 可复现。
 
 ### `template_skills`
 
-Stores the skills included in a template.
+保存模板包含的 skills。
 
-Important fields:
+重要字段：
 
 - `id`
 - `template_id`
@@ -131,20 +131,20 @@ Important fields:
 - `checksum`
 - `created_at`
 
-Only administrators can modify this table through template management flows.
+只有管理员可以通过模板管理流程修改这张表。
 
 ### `agents`
 
-Stores user-created Agent instances.
+保存用户创建的 Agent 实例。
 
-Important fields:
+重要字段：
 
 - `id`
 - `owner_user_id`
 - `template_id`
 - `template_version`
 - `name`
-- `status`: `creating`, `provisioning`, `starting`, `running`, `stopped`, `error`
+- `status`：`creating`、`provisioning`、`starting`、`running`、`stopped`、`error`
 - `runtime_id`
 - `hermes_home_path`
 - `last_error_code`
@@ -154,9 +154,9 @@ Important fields:
 
 ### `agent_runtime_events`
 
-Stores runtime lifecycle events.
+保存运行时生命周期事件。
 
-Important fields:
+重要字段：
 
 - `id`
 - `agent_id`
@@ -167,18 +167,18 @@ Important fields:
 - `metadata_json`
 - `created_at`
 
-This table is used for support, debugging, and summarized user-facing logs.
+这张表用于支持排障、调试和面向用户的摘要日志。
 
 ### `agent_channels`
 
-Stores channel configuration and status.
+保存渠道配置和状态。
 
-Important fields:
+重要字段：
 
 - `id`
 - `agent_id`
-- `channel_type`: `weixin` in the MVP
-- `status`: `not_configured`, `qr_pending`, `connected`, `error`, `disconnected`
+- `channel_type`：MVP 中为 `weixin`
+- `status`：`not_configured`、`qr_pending`、`connected`、`error`、`disconnected`
 - `external_account_id`
 - `last_error_code`
 - `last_error_message`
@@ -187,13 +187,13 @@ Important fields:
 
 ### `channel_pairing_sessions`
 
-Stores QR-code setup sessions.
+保存二维码配对会话。
 
-Important fields:
+重要字段：
 
 - `id`
 - `agent_channel_id`
-- `status`: `pending`, `connected`, `expired`, `failed`
+- `status`：`pending`、`connected`、`expired`、`failed`
 - `qr_payload`
 - `qr_image_path`
 - `expires_at`
@@ -203,19 +203,19 @@ Important fields:
 - `created_at`
 - `updated_at`
 
-QR payloads and image paths may be returned to the frontend. Provider keys, gateway tokens, Weixin credentials, and Hermes secrets must never be returned to the frontend.
+二维码内容和图片路径可以返回前端。provider key、gateway token、微信凭据和 Hermes secret 不能返回前端。
 
-## State Machines
+## 状态机
 
-### Agent Runtime
+### Agent 运行时
 
-Allowed progression:
+正常流转：
 
 ```text
 creating -> provisioning -> starting -> running
 ```
 
-Failure progression:
+失败和恢复流转：
 
 ```text
 creating -> error
@@ -228,14 +228,19 @@ error -> provisioning
 error -> starting
 ```
 
-The retry target depends on the failed phase. The backend records the failed phase in `last_error_code` and `agent_runtime_events`.
+重试从哪个阶段恢复取决于失败阶段。后端通过 `last_error_code` 和 `agent_runtime_events` 记录失败阶段。
 
-### Weixin Channel
+### 微信渠道
 
-Allowed progression:
+正常流转：
 
 ```text
 not_configured -> qr_pending -> connected
+```
+
+失败和恢复流转：
+
+```text
 qr_pending -> error
 qr_pending -> not_configured
 connected -> disconnected
@@ -243,55 +248,55 @@ disconnected -> qr_pending
 error -> qr_pending
 ```
 
-The API must reject channel setup unless the Agent is `running`.
+如果 Agent 不是 `running`，API 必须拒绝渠道配置请求。
 
-## User Flows
+## 用户流程
 
-### Administrator Template Flow
+### 管理员模板流程
 
-1. Admin logs in.
-2. Admin creates a draft Agent template.
-3. Admin uploads or edits the template package containing `SOUL.md`, `USER.md`, Hermes config fragments, and skills.
-4. Backend validates required files and skill structure.
-5. Admin publishes the template.
-6. Published template appears in the ordinary user template list.
+1. 管理员登录。
+2. 管理员创建草稿 Agent 模板。
+3. 管理员上传或编辑模板包，模板包包含 `SOUL.md`、`USER.md`、Hermes 配置片段和 skills。
+4. 后端校验必需文件和 skill 结构。
+5. 管理员发布模板。
+6. 已发布模板出现在普通用户模板列表中。
 
-### Ordinary User Agent Flow
+### 普通用户创建 Agent 流程
 
-1. User logs in.
-2. User views published templates.
-3. User chooses a template and enters an Agent name.
-4. API creates an `agents` record with status `creating`.
-5. API enqueues `ProvisionAgent`.
-6. Worker copies the template package into a new `HERMES_HOME`.
-7. Worker creates the Hermes container.
-8. Worker starts the container.
-9. Agent status becomes `running`.
-10. Console enables Weixin setup.
+1. 用户登录。
+2. 用户查看已发布模板。
+3. 用户选择模板并输入 Agent 名称。
+4. API 创建 `agents` 记录，状态为 `creating`。
+5. API 投递 `ProvisionAgent` 任务。
+6. Worker 将模板包复制到新的 `HERMES_HOME`。
+7. Worker 创建 Hermes 容器。
+8. Worker 启动容器。
+9. Agent 状态变为 `running`。
+10. 控制台开放微信配置入口。
 
-### Weixin Setup Flow
+### 微信配置流程
 
-1. User opens an Agent detail page.
-2. Console confirms Agent status is `running`.
-3. User starts Weixin setup.
-4. API creates or reuses a valid `channel_pairing_sessions` record.
-5. Worker runs the Hermes Weixin gateway setup path inside the Agent runtime.
-6. Backend stores QR payload or image reference.
-7. Console displays the QR code.
-8. User scans the QR code with Weixin.
-9. Worker observes successful connection.
-10. Channel status becomes `connected`.
-11. User chats with the Agent in Weixin.
+1. 用户打开 Agent 详情页。
+2. 控制台确认 Agent 状态为 `running`。
+3. 用户启动微信配置。
+4. API 创建或复用有效的 `channel_pairing_sessions` 记录。
+5. Worker 在该 Agent 运行时内执行 Hermes 微信 gateway setup 路径。
+6. 后端保存二维码内容或图片引用。
+7. 控制台展示二维码。
+8. 用户用微信扫码。
+9. Worker 观察到连接成功。
+10. 渠道状态变为 `connected`。
+11. 用户在微信中与 Agent 聊天。
 
-## API Surface
+## API 设计
 
-### Authentication
+### 认证
 
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 
-### Templates
+### 模板
 
 - `GET /api/templates`
 - `GET /api/templates/{id}`
@@ -309,84 +314,84 @@ The API must reject channel setup unless the Agent is `running`.
 - `POST /api/agents/{id}/stop`
 - `POST /api/agents/{id}/retry`
 
-### Weixin Channel
+### 微信渠道
 
 - `POST /api/agents/{id}/channels/weixin/setup`
 - `GET /api/agents/{id}/channels/weixin`
 - `POST /api/agents/{id}/channels/weixin/retry`
 
-The channel endpoints return current state. They do not block until QR scan completion.
+渠道接口返回当前状态，不阻塞等待用户扫码完成。
 
-## Worker Tasks
+## Worker 任务
 
 ### `ProvisionAgent`
 
-Responsibilities:
+职责：
 
-- Acquire an Agent-level runtime lock.
-- Move Agent status from `creating` to `provisioning`.
-- Create the Agent `HERMES_HOME`.
-- Copy template files and skills.
-- Write Hermes configuration.
-- Create the Hermes container.
-- Start the Hermes container.
-- Move Agent status to `running`.
-- Record events at each major step.
+- 获取 Agent 级运行时锁。
+- 将 Agent 状态从 `creating` 推进到 `provisioning`。
+- 创建 Agent 的 `HERMES_HOME`。
+- 复制模板文件和 skills。
+- 写入 Hermes 配置。
+- 创建 Hermes 容器。
+- 启动 Hermes 容器。
+- 将 Agent 状态推进到 `running`。
+- 在每个主要步骤记录事件。
 
-The task must be idempotent. Re-running it should detect existing filesystem and container state and continue from the last safe point.
+任务必须幂等。重复执行时应识别已有文件系统和容器状态，并从最后一个安全点继续。
 
 ### `SetupWeixinChannel`
 
-Responsibilities:
+职责：
 
-- Verify Agent is `running`.
-- Acquire an Agent channel lock.
-- Create or reuse an unexpired pairing session.
-- Run the Hermes Weixin gateway setup path or equivalent noninteractive adapter.
-- Store QR payload or image reference.
-- Update channel status to `qr_pending`.
-- Observe connection success, expiration, or failure.
-- Update channel status to `connected`, `not_configured`, or `error`.
+- 校验 Agent 为 `running`。
+- 获取 Agent 渠道锁。
+- 创建或复用未过期的配对会话。
+- 执行 Hermes 微信 gateway setup 路径，或等价的非交互适配流程。
+- 保存二维码内容或图片引用。
+- 将渠道状态更新为 `qr_pending`。
+- 观察连接成功、二维码过期或失败。
+- 将渠道状态更新为 `connected`、`not_configured` 或 `error`。
 
-Repeated setup requests should return the current unexpired pairing session instead of creating competing QR sessions.
+重复 setup 请求应返回当前未过期的配对会话，不能创建互相竞争的二维码会话。
 
-## Concurrency
+## 并发控制
 
-SQLite must use WAL mode and a busy timeout.
+SQLite 必须启用 WAL 模式和 busy timeout。
 
-The backend must prevent concurrent runtime operations for the same Agent. Examples:
+后端必须阻止同一 Agent 的运行时操作并发执行。例如：
 
-- Start and stop cannot run at the same time.
-- Provision and retry cannot run at the same time.
-- Weixin setup and channel retry cannot run at the same time.
+- start 和 stop 不能同时执行。
+- provision 和 retry 不能同时执行。
+- 微信 setup 和渠道 retry 不能同时执行。
 
-This can be implemented with a database-backed lock table or transactional task status checks. The implementation plan should choose the simplest reliable option for the first version.
+实现方式可以是数据库锁表，也可以是事务化任务状态检查。实现计划应选择第一版里最简单可靠的方案。
 
-## Security
+## 安全
 
-Authorization rules:
+授权规则：
 
-- Admins can manage templates.
-- Ordinary users can list only published templates.
-- Ordinary users can create Agents only for themselves.
-- Ordinary users can access only their own Agents, channels, and user-facing event summaries.
-- Ordinary users cannot modify template files or skills.
+- 管理员可以管理模板。
+- 普通用户只能查看已发布模板。
+- 普通用户只能为自己创建 Agent。
+- 普通用户只能访问自己的 Agent、渠道和面向用户的事件摘要。
+- 普通用户不能修改模板文件或 skills。
 
-Runtime isolation:
+运行时隔离：
 
-- Each Hermes container mounts only its own `HERMES_HOME`.
-- Containers must not mount a shared user home directory.
-- Container names, paths, and runtime IDs should derive from internal IDs, not user-controlled strings.
+- 每个 Hermes 容器只挂载自己的 `HERMES_HOME`。
+- 容器不能挂载共享用户 home 目录。
+- 容器名称、路径和 runtime ID 应基于内部 ID 生成，不能直接使用用户输入。
 
-Secret handling:
+密钥处理：
 
-- Provider API keys, Weixin credentials, gateway tokens, and Hermes secrets must be stored server-side only.
-- Secrets must not be returned in API responses, logs, or frontend state.
-- User-facing errors should expose short error summaries and a stable error code.
+- provider API key、微信凭据、gateway token 和 Hermes secret 只能保存在服务端。
+- 密钥不能出现在 API 响应、日志或前端状态中。
+- 面向用户的错误只暴露简短摘要和稳定错误码。
 
-## Error Handling
+## 错误处理
 
-Agent errors should record the failed phase:
+Agent 错误应记录失败阶段：
 
 - `copy_template_failed`
 - `config_write_failed`
@@ -394,7 +399,7 @@ Agent errors should record the failed phase:
 - `container_start_failed`
 - `container_healthcheck_failed`
 
-Weixin errors should record channel-specific causes:
+微信错误应记录渠道相关原因：
 
 - `agent_not_running`
 - `qr_generation_failed`
@@ -403,73 +408,73 @@ Weixin errors should record channel-specific causes:
 - `gateway_disconnected`
 - `setup_timeout`
 
-Agent creation failure does not create a connected channel. Weixin channel failure does not delete or roll back the Agent.
+Agent 创建失败不会创建已连接渠道。微信渠道失败不会删除或回滚 Agent。
 
-## Testing Strategy
+## 测试策略
 
-### Backend Unit Tests
+### 后端单元测试
 
-Cover:
+覆盖：
 
-- RBAC rules.
-- Template publish rules.
-- Agent state machine transitions.
-- Weixin channel state machine transitions.
-- SQLite repository behavior.
-- Runtime lock behavior.
+- RBAC 规则。
+- 模板发布规则。
+- Agent 状态机流转。
+- 微信渠道状态机流转。
+- SQLite repository 行为。
+- 运行时锁行为。
 
-### Worker Integration Tests
+### Worker 集成测试
 
-Use a fake Hermes runner instead of a real container by default.
+默认使用 fake Hermes runner，而不使用真实容器。
 
-Cover:
+覆盖：
 
-- Successful `ProvisionAgent`.
-- Failed template copy.
-- Failed container start.
-- Retry after provision failure.
-- Successful `SetupWeixinChannel`.
-- QR expiration.
-- Duplicate setup request reuses active pairing session.
+- `ProvisionAgent` 成功。
+- 模板复制失败。
+- 容器启动失败。
+- provision 失败后的重试。
+- `SetupWeixinChannel` 成功。
+- 二维码过期。
+- 重复 setup 请求复用活跃配对会话。
 
-### Frontend E2E Tests
+### 前端 E2E 测试
 
-Cover:
+覆盖：
 
-- User logs in.
-- User chooses a published template.
-- User creates an Agent.
-- Agent progresses to `running`.
-- Weixin setup becomes available only after `running`.
-- User sees QR code.
-- Simulated pairing changes status to `connected`.
+- 用户登录。
+- 用户选择已发布模板。
+- 用户创建 Agent。
+- Agent 推进到 `running`。
+- 微信 setup 只在 `running` 后可用。
+- 用户看到二维码。
+- 模拟配对后状态变为 `connected`。
 
-### Manual or Optional External Tests
+### 手动或可选外部测试
 
-Real Hermes + Weixin QR login should be an optional test gated by environment variables and manual account availability. It should not run in default CI.
+真实 Hermes + 微信扫码登录应作为可选测试，通过环境变量和手动账号可用性控制。它不应进入默认 CI。
 
-## Open Follow-Ups After MVP
+## MVP 后续事项
 
-- User-uploaded skills.
-- Template variables instead of direct `SOUL.md` or `USER.md` editing.
-- QQ, Telegram, WeCom, and other channels.
-- Template marketplace and ratings.
-- Organization/team support.
-- Agent sharing.
-- Runtime metrics and cost tracking.
-- Noninteractive Hermes gateway setup adapters if the interactive CLI path is insufficient for automation.
+- 用户上传 skills。
+- 模板变量，替代用户直接编辑 `SOUL.md` 或 `USER.md`。
+- QQ、Telegram、WeCom 和其他渠道。
+- 模板市场和评分。
+- 组织或团队支持。
+- Agent 分享。
+- 运行时指标和成本跟踪。
+- 如果 Hermes 交互式 CLI 不适合自动化，需要补充非交互式 gateway setup 适配器。
 
-## Acceptance Criteria
+## 验收标准
 
-- Admin can create and publish an Agent template.
-- Ordinary user can see published templates.
-- Ordinary user can create an Agent from a template.
-- Backend creates a dedicated Hermes home for the Agent.
-- Backend starts a dedicated Hermes container for the Agent.
-- Console shows Agent lifecycle status.
-- Weixin setup is disabled before Agent reaches `running`.
-- User can start Weixin setup after Agent reaches `running`.
-- Console displays a QR code for Weixin setup.
-- Successful scan marks channel as `connected`.
-- User can chat with the Agent from Weixin.
-- Failed Agent provisioning and failed Weixin setup produce recoverable states and user-facing error messages.
+- 管理员可以创建并发布 Agent 模板。
+- 普通用户可以看到已发布模板。
+- 普通用户可以基于模板创建 Agent。
+- 后端为 Agent 创建专用 Hermes home。
+- 后端为 Agent 启动专用 Hermes 容器。
+- 控制台展示 Agent 生命周期状态。
+- Agent 到达 `running` 前，微信 setup 禁用。
+- Agent 到达 `running` 后，用户可以启动微信 setup。
+- 控制台展示微信 setup 二维码。
+- 扫码成功后，渠道标记为 `connected`。
+- 用户可以从微信中与 Agent 聊天。
+- Agent provisioning 失败和微信 setup 失败都会进入可恢复状态，并提供面向用户的错误信息。
