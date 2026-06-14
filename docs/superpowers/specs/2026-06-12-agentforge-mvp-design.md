@@ -121,6 +121,7 @@ AgentForge/
 │       │   ├── db/                   # SQLite 连接、迁移、repository
 │       │   └── config/               # 服务端配置
 │       ├── migrations/
+│       ├── .env.example              # 后端服务自身配置示例
 │       └── tests/
 ├── var/                              # 本地开发默认数据根目录；生产可挂载到数据盘
 │   ├── agentforge.db                 # SQLite WAL 数据库
@@ -131,6 +132,28 @@ AgentForge/
 ```
 
 `web/` 放在根目录的原因是：MVP 只有一个 Next.js 控制台，没有多前端应用并存的需求。直接使用 `web/` 更短，也更符合当前规模。Go 后端仍放在 `services/api`，避免前端代码和 Go module、数据库迁移、运行时管理代码混在一起。
+
+### 后端服务自身配置
+
+Go 后端服务可以从 `services/api/.env` 读取自身配置，方便本地开发和部署时注入环境差异。这个 `.env` 属于 AgentForge 后端服务，不是每个 Hermes Agent 的 `$HERMES_HOME/.env`。
+
+建议提供 `services/api/.env.example`，本地开发复制为 `services/api/.env`：
+
+```dotenv
+AGENTFORGE_HTTP_ADDR=:8080
+AGENTFORGE_PUBLIC_BASE_URL=http://localhost:8080
+AGENTFORGE_DATA_DIR=../../var
+AGENTFORGE_SQLITE_PATH=../../var/agentforge.db
+AGENTFORGE_SESSION_SECRET=dev-change-me
+AGENTFORGE_HERMES_IMAGE=nousresearch/hermes-agent:v2026.6.5
+AGENTFORGE_HERMES_MEMORY=500m
+AGENTFORGE_HERMES_CPUS=0.5
+AGENTFORGE_DOCKER_BIN=docker
+AGENTFORGE_WORKER_ENABLED=true
+AGENTFORGE_WORKER_ID=dev-worker-1
+```
+
+后端服务 `.env` 用于配置 API 监听地址、数据目录、SQLite 路径、session secret、Hermes 镜像、容器默认资源和 worker 开关。每个 Agent 的 Hermes 配置仍由后端生成到 `var/agents/{agent_id}/hermes-home/config.yaml` 和 `var/agents/{agent_id}/hermes-home/.env`。
 
 运行时存储目录由 Go 后端统一管理，数据库只保存路径、版本和校验值，不把大文件塞进 SQLite：
 
