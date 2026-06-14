@@ -96,16 +96,15 @@ flowchart LR
 
 ### 服务结构与代码组织
 
-第一版建议使用 monorepo，前后端和运行时管理代码分开：
+第一版建议使用简化 monorepo，前端、后端和运行时数据目录在根目录分开：
 
 ```text
 AgentForge/
-├── apps/
-│   └── web/                         # Next.js 控制台
-│       ├── app/
-│       ├── components/
-│       ├── lib/api/
-│       └── tests/
+├── web/                              # Next.js 控制台
+│   ├── app/
+│   ├── components/
+│   ├── lib/api/
+│   └── tests/
 ├── services/
 │   └── api/                         # Go 后端
 │       ├── cmd/
@@ -131,7 +130,7 @@ AgentForge/
 └── docs/
 ```
 
-`apps/web` 的设计原因是：这个仓库同时包含前端应用和 Go 后端服务，`apps/` 用来放可直接运行的应用，`services/` 用来放后端服务。这样前端不会和 Go module、后端迁移脚本、运行时管理代码混在根目录。后续如果增加 admin console、公开官网、桌面控制台或移动端壳，也可以继续放在 `apps/` 下。若项目长期只保留一个 Next.js 前端，也可以把 `apps/web` 简化为根目录 `web/`；本规格选择 `apps/web` 是为了给多应用 monorepo 留出清晰边界。
+`web/` 放在根目录的原因是：MVP 只有一个 Next.js 控制台，没有多前端应用并存的需求。直接使用 `web/` 更短，也更符合当前规模。Go 后端仍放在 `services/api`，避免前端代码和 Go module、数据库迁移、运行时管理代码混在一起。
 
 运行时存储目录由 Go 后端统一管理，数据库只保存路径、版本和校验值，不把大文件塞进 SQLite：
 
