@@ -32,7 +32,7 @@ Hermes 官方文档说明了以下能力：
 - `USER.md` 和记忆相关文件用于持久用户上下文。
 - skills 系统基于 skill 目录和 `SKILL.md`。
 - 消息网关支持 Weixin、WeCom、QQ Bot、Telegram 等平台。
-- `config.yaml` 是非密钥配置的主配置文件，`.env` 是 API key、token、密码等密钥配置位置。
+- `config.yaml` 是 Hermes 主配置文件。MVP 中模型 provider 配置直接写入 `config.yaml`，微信账号与渠道策略配置写入 `.env`。
 - `hermes gateway setup` 是面向人工操作的交互式向导，不适合作为平台后端的主集成方式。
 - gateway 运行时由平台适配器接收消息，通过聊天会话路由，并分发给 Agent 处理。
 
@@ -209,11 +209,24 @@ MVP 采用文件生成方式配置 Hermes：
 
 - Worker 为每个 Agent 创建独立 `HERMES_HOME`。
 - Worker 将模板中的 `SOUL.md`、`USER.md` 和 skills 复制到该目录。
-- Worker 生成或合并 `$HERMES_HOME/config.yaml`，只写入模型、terminal、display 等通用非密钥配置。
-- Worker 生成或更新 `$HERMES_HOME/.env`，写入 provider key、gateway token、Weixin 适配器凭据和 Weixin 策略配置。
+- Worker 生成或合并 `$HERMES_HOME/config.yaml`，写入模型、provider、terminal、display 等通用 Hermes 配置。
+- Worker 生成或更新 `$HERMES_HOME/.env`，写入 Weixin 适配器凭据和 Weixin 策略配置。
 - Worker 启动或重启该 Agent 的 Hermes gateway 进程。
 - 对于微信扫码，Worker 使用 Go 原生 iLink client 实现 Hermes `gateway/platforms/weixin.py` 中 `qr_login()` 的等价流程，通过 iLink `get_bot_qrcode` 和 `get_qrcode_status` 获取二维码与扫码状态，并同步到 `channel_pairing_sessions`。后端不调用 Python 脚本，也不把 Hermes Python 代码当作子进程来跑。
 - 生成 Weixin 配置时，不在 `config.yaml` 中写 `gateway.platforms.weixin` 片段；微信相关配置直接写入 `.env`。默认私信策略为 `allowlist`，默认群组策略为 `disabled`。平台只允许绑定该 Agent 的平台用户访问对应微信 Agent；群聊默认关闭。
+
+目标 `config.yaml` 模型配置片段：
+
+```yaml
+model:
+  default: deepseek-v4-flash
+  provider: custom
+  base_url: https://api.deepseek.com
+  api_key: xxx
+  api_mode: chat_completions
+```
+
+`api_key` 由服务端写入 Agent 的宿主机 `hermes-home/config.yaml`，不能返回前端，也不能写入用户可见日志。后续可以将 `api_key` 替换为服务端密钥引用或环境变量引用，但 MVP 按上面的 Hermes 配置结构落地。
 
 `hermes gateway setup` 只作为人工排障路径保留，不进入 MVP 的正常后台任务链路。
 
@@ -710,6 +723,7 @@ SQLite 必须启用 WAL 模式和 busy timeout。
 密钥处理：
 
 - provider API key、微信凭据、gateway token 和 Hermes secret 只能保存在服务端。
+- MVP 中 provider API key 写入每个 Agent 的 `$HERMES_HOME/config.yaml`，微信凭据和渠道策略写入 `$HERMES_HOME/.env`。
 - 密钥不能出现在 API 响应、日志或前端状态中。
 - 面向用户的错误只暴露简短摘要和稳定错误码。
 
