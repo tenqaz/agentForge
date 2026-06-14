@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"agentforge.local/services/api/internal/jobs"
@@ -93,7 +94,7 @@ func TestServiceCreateCreatesAgentAndProvisionJob(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository)
+	service := NewService(database, repository, jobRepository, t.TempDir())
 	ctx := context.Background()
 
 	created, err := service.Create(ctx, CreateParams{
@@ -109,6 +110,10 @@ func TestServiceCreateCreatesAgentAndProvisionJob(t *testing.T) {
 	}
 	if created.TemplateVersion != 3 {
 		t.Fatalf("created template version = %d, want 3", created.TemplateVersion)
+	}
+	expectedHome := filepath.Join(service.dataDir, "agents", created.ID, "hermes-home")
+	if created.HermesHomePath != expectedHome {
+		t.Fatalf("created hermes home path = %q, want %q", created.HermesHomePath, expectedHome)
 	}
 
 	stored, err := repository.Get(ctx, created.ID)
@@ -135,7 +140,7 @@ func TestServiceCreateRejectsNonPublishedTemplates(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository)
+	service := NewService(database, repository, jobRepository, t.TempDir())
 	ctx := context.Background()
 
 	for _, status := range []string{"draft", "archived"} {
@@ -157,6 +162,35 @@ func TestServiceCreateRejectsNonPublishedTemplates(t *testing.T) {
 		if !errors.Is(err, ErrTemplateNotFound) {
 			t.Fatalf("Create with %s template error = %v, want ErrTemplateNotFound", status, err)
 		}
+	}
+}
+
+func TestServiceCreateRuntimeJobRejectsUnavailableRuntime(t *testing.T) {
+	database := newAgentsTestDB(t)
+	repository := NewRepository(database)
+	jobRepository := jobs.NewRuntimeRepository(database)
+	service := NewService(database, repository, jobRepository, t.TempDir())
+	ctx := context.Background()
+	insertAgentFixture(t, database, "agent-1", "user-1", StatusCreating)
+
+	if _, err := service.CreateRuntimeJob(ctx, "agent-1", jobs.TypeRestartRuntime); !errors.Is(err, ErrRuntimeUnavailable) {
+		t.Fatalf("CreateRuntimeJob without runtime error = %v, want ErrRuntimeUnavailable", err)
+	}
+
+	if _, err := database.ExecContext(ctx, `
+		UPDATE agents
+		SET status = 'running', runtime_id = 'runtime-1'
+		WHERE id = 'agent-1';
+	`); err != nil {
+		t.Fatalf("seed runtime: %v", err)
+	}
+
+	job, err := service.CreateRuntimeJob(ctx, "agent-1", jobs.TypeRestartRuntime)
+	if err != nil {
+		t.Fatalf("CreateRuntimeJob returned error: %v", err)
+	}
+	if job.Type != jobs.TypeRestartRuntime || job.Status != jobs.StatusQueued {
+		t.Fatalf("CreateRuntimeJob result = %#v", job)
 	}
 }
 

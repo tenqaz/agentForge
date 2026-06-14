@@ -19,6 +19,7 @@ var (
 	ErrConflict               = errors.New("agent conflict")
 	ErrInvalidInput           = errors.New("invalid agent input")
 	ErrInvalidStateTransition = errors.New("invalid agent status transition")
+	ErrRuntimeUnavailable     = errors.New("agent runtime unavailable")
 )
 
 type Agent struct {
@@ -84,4 +85,13 @@ func (s Status) CanTransitionTo(next Status) bool {
 	}
 	_, ok = nextStates[next]
 	return ok
+}
+
+func (s Status) CanRestartRuntime() bool {
+	switch s {
+	case StatusRunning, StatusStopped, StatusError:
+		return true
+	default:
+		return false
+	}
 }

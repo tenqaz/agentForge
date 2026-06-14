@@ -127,10 +127,7 @@ func (h *AgentHandlers) CreateRuntimeJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	job, err := h.runtimeJobs.CreateQueued(r.Context(), jobs.RuntimeJob{
-		AgentID: agent.ID,
-		Type:    request.Type,
-	})
+	job, err := h.service.CreateRuntimeJob(r.Context(), agent.ID, request.Type)
 	if err != nil {
 		writeRuntimeJobError(w, err)
 		return
@@ -299,6 +296,8 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "conflict")
 	case errors.Is(err, agents.ErrInvalidInput), errors.Is(err, agents.ErrInvalidStateTransition):
 		writeError(w, http.StatusBadRequest, "invalid_request")
+	case errors.Is(err, agents.ErrRuntimeUnavailable):
+		writeError(w, http.StatusConflict, "runtime_unavailable")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error")
 	}
@@ -312,6 +311,8 @@ func writeRuntimeJobError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "conflict")
 	case errors.Is(err, jobs.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "invalid_request")
+	case errors.Is(err, agents.ErrRuntimeUnavailable):
+		writeError(w, http.StatusConflict, "runtime_unavailable")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error")
 	}

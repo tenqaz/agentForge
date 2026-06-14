@@ -85,13 +85,17 @@ func (r *Repository) TransitionStatus(ctx context.Context, id string, next Statu
 	result, err := r.database.ExecContext(ctx, `
 		UPDATE agents
 		SET status = ?, runtime_id = ?, last_error_code = ?, last_error_message = ?, updated_at = datetime('now')
-		WHERE id = ?;
-	`, next, runtimeID, lastErrorCode, lastErrorMessage, id)
+		WHERE id = ? AND status = ?;
+	`, next, runtimeID, lastErrorCode, lastErrorMessage, id, agent.Status)
 	if err != nil {
 		return Agent{}, err
 	}
-	if err := requireAffected(result); err != nil {
+	affected, err := result.RowsAffected()
+	if err != nil {
 		return Agent{}, err
+	}
+	if affected == 0 {
+		return Agent{}, ErrInvalidStateTransition
 	}
 	return r.Get(ctx, id)
 }

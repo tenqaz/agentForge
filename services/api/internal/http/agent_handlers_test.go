@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"agentforge.local/services/api/internal/agents"
@@ -16,7 +17,7 @@ import (
 )
 
 func TestAgentRoutesCreateListDetailRuntimeAndJobs(t *testing.T) {
-	router, manager, database := newAgentTestRouter(t)
+	router, manager, database, dataDir := newAgentTestRouter(t)
 	userCookie := sessionCookieFor(t, manager, auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser})
 	ctx := t.Context()
 
@@ -27,6 +28,14 @@ func TestAgentRoutesCreateListDetailRuntimeAndJobs(t *testing.T) {
 	created := decodeAgentResponse(t, createRecorder.Body.Bytes()).Agent
 	if created.Status != agents.StatusCreating {
 		t.Fatalf("created agent = %#v", created)
+	}
+	expectedHome := filepath.Join(dataDir, "agents", created.ID, "hermes-home")
+	var storedHome string
+	if err := database.QueryRow(`SELECT hermes_home_path FROM agents WHERE id = ?`, created.ID).Scan(&storedHome); err != nil {
+		t.Fatalf("load hermes_home_path: %v", err)
+	}
+	if storedHome != expectedHome {
+		t.Fatalf("stored hermes_home_path = %q, want %q", storedHome, expectedHome)
 	}
 
 	listRecorder := httptest.NewRecorder()
@@ -105,6 +114,13 @@ func TestAgentRoutesCreateListDetailRuntimeAndJobs(t *testing.T) {
 	`, jobsResponse.Jobs[0].ID); err != nil {
 		t.Fatalf("complete provision job: %v", err)
 	}
+	if _, err := database.ExecContext(ctx, `
+		UPDATE agents
+		SET status = 'running', runtime_id = 'runtime-1', updated_at = datetime('now')
+		WHERE id = ?;
+	`, created.ID); err != nil {
+		t.Fatalf("activate runtime: %v", err)
+	}
 
 	restartRecorder := doJSON(t, router, http.MethodPost, "/api/agents/"+created.ID+"/runtime-jobs", `{"type":"restart_runtime"}`, userCookie)
 	if restartRecorder.Code != http.StatusCreated {
@@ -117,7 +133,7 @@ func TestAgentRoutesCreateListDetailRuntimeAndJobs(t *testing.T) {
 }
 
 func TestAgentRoutesEnforceOwnershipAndAuthentication(t *testing.T) {
-	router, manager, database := newAgentTestRouter(t)
+	router, manager, database, _ := newAgentTestRouter(t)
 	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
 	userCookie := sessionCookieFor(t, manager, auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser})
 	otherUserCookie := sessionCookieFor(t, manager, auth.User{ID: "user-2", Email: "user2@example.com", Role: auth.RoleUser})
@@ -163,9 +179,12 @@ func TestAgentRoutesEnforceOwnershipAndAuthentication(t *testing.T) {
 }
 
 func TestCreateRuntimeJobReturnsConflictWhenAgentAlreadyHasActiveJob(t *testing.T) {
-	router, manager, database := newAgentTestRouter(t)
+	router, manager, database, _ := newAgentTestRouter(t)
 	userCookie := sessionCookieFor(t, manager, auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser})
 	agentID := insertAgentHTTPFixture(t, database, "user-1", agents.StatusRunning)
+	if _, err := database.Exec(`UPDATE agents SET runtime_id = 'runtime-1' WHERE id = ?`, agentID); err != nil {
+		t.Fatalf("seed runtime id: %v", err)
+	}
 	insertRuntimeJobHTTPFixture(t, database, "job-active", agentID, jobs.TypeRestartRuntime, jobs.StatusQueued)
 
 	recorder := doJSON(t, router, http.MethodPost, "/api/agents/"+agentID+"/runtime-jobs", `{"type":"restart_runtime"}`, userCookie)
@@ -174,8 +193,22 @@ func TestCreateRuntimeJobReturnsConflictWhenAgentAlreadyHasActiveJob(t *testing.
 	}
 }
 
+func TestCreateRuntimeJobRejectsUnavailableRuntime(t *testing.T) {
+	router, manager, database, _ := newAgentTestRouter(t)
+	userCookie := sessionCookieFor(t, manager, auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser})
+	agentID := insertAgentHTTPFixture(t, database, "user-1", agents.StatusCreating)
+
+	recorder := doJSON(t, router, http.MethodPost, "/api/agents/"+agentID+"/runtime-jobs", `{"type":"restart_runtime"}`, userCookie)
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("create runtime job status = %d, want 409, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte("runtime_unavailable")) {
+		t.Fatalf("unexpected response body = %s", recorder.Body.String())
+	}
+}
+
 func TestCreateAgentRejectsNonPublishedTemplate(t *testing.T) {
-	router, manager, database := newAgentTestRouter(t)
+	router, manager, database, _ := newAgentTestRouter(t)
 	userCookie := sessionCookieFor(t, manager, auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser})
 
 	for _, status := range []string{"draft", "archived"} {
@@ -198,20 +231,26 @@ func TestCreateAgentRejectsNonPublishedTemplate(t *testing.T) {
 	}
 }
 
-func newAgentTestRouter(t *testing.T) (http.Handler, *auth.SessionManager, *sql.DB) {
+func newAgentTestRouter(t *testing.T) (http.Handler, *auth.SessionManager, *sql.DB, string) {
 	t.Helper()
 
 	database := newAgentHTTPTestDB(t)
 	manager := auth.NewSessionManager("test-secret", false)
 	agentRepository := agents.NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
+	dataDir := testDataDir(t)
 	router := NewRouter(Dependencies{
 		AuthRepository:       auth.NewRepository(database),
 		SessionManager:       manager,
-		AgentService:         agents.NewService(database, agentRepository, jobRepository),
+		AgentService:         agents.NewService(database, agentRepository, jobRepository, dataDir),
 		RuntimeJobRepository: jobRepository,
 	})
-	return router, manager, database
+	return router, manager, database, dataDir
+}
+
+func testDataDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "var")
 }
 
 func newAgentHTTPTestDB(t *testing.T) *sql.DB {

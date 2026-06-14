@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"strings"
 
 	"agentforge.local/services/api/internal/jobs"
@@ -13,13 +14,15 @@ type Service struct {
 	database    *sql.DB
 	repository  *Repository
 	runtimeJobs *jobs.RuntimeRepository
+	dataDir     string
 }
 
-func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository) *Service {
+func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, dataDir string) *Service {
 	return &Service{
 		database:    database,
 		repository:  repository,
 		runtimeJobs: runtimeJobs,
+		dataDir:     dataDir,
 	}
 }
 
@@ -50,7 +53,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Agent, error
 		TemplateVersion: templateVersion,
 		Name:            params.Name,
 		Status:          StatusCreating,
-		HermesHomePath:  "/var/lib/agentforge/hermes/" + agentID,
+		HermesHomePath:  filepath.Join(s.dataDir, "agents", agentID, "hermes-home"),
 	})
 	if err != nil {
 		return Agent{}, err
@@ -95,4 +98,21 @@ func (s *Service) Runtime(ctx context.Context, id string) (Runtime, error) {
 		LastErrorMessage: agent.LastErrorMessage,
 		UpdatedAt:        agent.UpdatedAt,
 	}, nil
+}
+
+func (s *Service) CreateRuntimeJob(ctx context.Context, agentID string, jobType jobs.Type) (jobs.RuntimeJob, error) {
+	if jobType != jobs.TypeRestartRuntime {
+		return jobs.RuntimeJob{}, jobs.ErrInvalidInput
+	}
+	agent, err := s.repository.Get(ctx, agentID)
+	if err != nil {
+		return jobs.RuntimeJob{}, err
+	}
+	if !agent.Status.CanRestartRuntime() || strings.TrimSpace(agent.RuntimeID) == "" {
+		return jobs.RuntimeJob{}, ErrRuntimeUnavailable
+	}
+	return s.runtimeJobs.CreateQueued(ctx, jobs.RuntimeJob{
+		AgentID: agent.ID,
+		Type:    jobType,
+	})
 }
