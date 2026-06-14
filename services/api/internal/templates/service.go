@@ -248,7 +248,23 @@ func (s *Service) Publish(ctx context.Context, templateID string) (Template, err
 }
 
 func (s *Service) Unpublish(ctx context.Context, templateID string) (Template, error) {
-	return s.repository.ArchiveTemplate(ctx, templateID)
+	template, err := s.repository.GetTemplate(ctx, templateID)
+	if err != nil {
+		return Template{}, err
+	}
+	if template.Status != StatusPublished {
+		return Template{}, ErrInvalidInput
+	}
+	next, err := s.ensureDraft(ctx, template)
+	if err != nil {
+		return Template{}, err
+	}
+	if _, err := s.repository.ArchiveTemplate(ctx, template.ID); err != nil {
+		_ = s.repository.DeleteTemplate(ctx, next.ID)
+		_ = s.store.DeleteTemplate(next)
+		return Template{}, err
+	}
+	return next, nil
 }
 
 func (s *Service) editableTemplate(ctx context.Context, id string) (Template, error) {

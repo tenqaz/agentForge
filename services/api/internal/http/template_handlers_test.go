@@ -116,6 +116,72 @@ func TestPublicTemplateDetailHidesDraftAndArchivedTemplates(t *testing.T) {
 	}
 }
 
+func TestDeletePublicationReturnsTemplateToDraft(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	if publishRecorder := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+templateID+"/publication", `{}`, adminCookie); publishRecorder.Code != http.StatusOK {
+		t.Fatalf("publish status = %d, body = %s", publishRecorder.Code, publishRecorder.Body.String())
+	}
+
+	unpublishRecorder := httptest.NewRecorder()
+	unpublishRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID+"/publication", nil)
+	unpublishRequest.AddCookie(adminCookie)
+	router.ServeHTTP(unpublishRecorder, unpublishRequest)
+	if unpublishRecorder.Code != http.StatusOK {
+		t.Fatalf("unpublish status = %d, body = %s", unpublishRecorder.Code, unpublishRecorder.Body.String())
+	}
+	response := decodeTemplateResponse(t, unpublishRecorder.Body.Bytes()).Template
+	if response.ID == templateID || response.Status != templates.StatusDraft || response.Version != 2 || response.PublishedAt != nil {
+		t.Fatalf("unpublished template = %#v", response)
+	}
+
+	publicRecorder := httptest.NewRecorder()
+	router.ServeHTTP(publicRecorder, httptest.NewRequest(http.MethodGet, "/api/templates/"+templateID, nil))
+	if publicRecorder.Code != http.StatusNotFound {
+		t.Fatalf("public detail after unpublish status = %d, want 404", publicRecorder.Code)
+	}
+
+	originalRecorder := httptest.NewRecorder()
+	originalRequest := httptest.NewRequest(http.MethodGet, "/api/admin/templates/"+templateID+"/soul", nil)
+	originalRequest.AddCookie(adminCookie)
+	router.ServeHTTP(originalRecorder, originalRequest)
+	if originalRecorder.Code != http.StatusOK || !bytes.Contains(originalRecorder.Body.Bytes(), []byte("Original soul.")) {
+		t.Fatalf("original template after unpublish status = %d, body = %s", originalRecorder.Code, originalRecorder.Body.String())
+	}
+}
+
+func TestDeletePublicationRejectsNonPublishedTemplate(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	draftRecorder := httptest.NewRecorder()
+	draftRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID+"/publication", nil)
+	draftRequest.AddCookie(adminCookie)
+	router.ServeHTTP(draftRecorder, draftRequest)
+	if draftRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("draft unpublish status = %d, body = %s", draftRecorder.Code, draftRecorder.Body.String())
+	}
+
+	archiveRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID, nil)
+	archiveRequest.AddCookie(adminCookie)
+	archiveRecorder := httptest.NewRecorder()
+	router.ServeHTTP(archiveRecorder, archiveRequest)
+	if archiveRecorder.Code != http.StatusNoContent {
+		t.Fatalf("archive status = %d, body = %s", archiveRecorder.Code, archiveRecorder.Body.String())
+	}
+
+	archivedRecorder := httptest.NewRecorder()
+	archivedRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID+"/publication", nil)
+	archivedRequest.AddCookie(adminCookie)
+	router.ServeHTTP(archivedRecorder, archivedRequest)
+	if archivedRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("archived unpublish status = %d, body = %s", archivedRecorder.Code, archivedRecorder.Body.String())
+	}
+}
+
 func TestAdminTemplateRoutesRequireAdmin(t *testing.T) {
 	router, manager := newTemplateTestRouter(t)
 	userCookie := sessionCookieFor(t, manager, auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser})
