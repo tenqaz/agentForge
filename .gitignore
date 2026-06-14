@@ -1,2 +1,5 @@
 .superpowers/
 .worktrees/
+var/
+services/api/.env
+web/.env.local
