@@ -46,6 +46,22 @@ func (r *Repository) FindUserByEmail(ctx context.Context, email string) (User, e
 	return user, nil
 }
 
+func (r *Repository) FindUserByID(ctx context.Context, userID string) (User, error) {
+	var user User
+	err := r.database.QueryRowContext(ctx, `
+		SELECT id, email, role
+		FROM users
+		WHERE id = ?;
+	`, userID).Scan(&user.ID, &user.Email, &user.Role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrUserNotFound
+	}
+	if err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
 func (r *Repository) PasswordHashForUser(ctx context.Context, userID string) (string, error) {
 	var hash string
 	err := r.database.QueryRowContext(ctx, `

@@ -3,10 +3,14 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -64,14 +68,29 @@ func TestRepositoryFindsUsersByEmailWithoutPasswordHash(t *testing.T) {
 		t.Fatal("stored password hash does not verify")
 	}
 
+	user, err = repo.FindUserByID(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("FindUserByID returned error: %v", err)
+	}
+	if user.ID != "user-1" || user.Email != "USER@example.com" || user.Role != RoleUser {
+		t.Fatalf("unexpected user by ID: %#v", user)
+	}
+	if user.PasswordHash != "" {
+		t.Fatal("FindUserByID exposed password hash on User")
+	}
+
 	_, err = repo.FindUserByEmail(context.Background(), "missing@example.com")
 	if !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("FindUserByEmail missing user error = %v, want ErrUserNotFound", err)
 	}
+	_, err = repo.FindUserByID(context.Background(), "missing-user")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("FindUserByID missing user error = %v, want ErrUserNotFound", err)
+	}
 }
 
 func TestSessionManagerCreatesParsesAndClearsSignedCookie(t *testing.T) {
-	manager := NewSessionManager("test-secret")
+	manager := NewSessionManager("test-secret", true)
 	user := User{ID: "user-1", Email: "user@example.com", Role: RoleUser}
 
 	recorder := httptest.NewRecorder()
@@ -92,8 +111,24 @@ func TestSessionManagerCreatesParsesAndClearsSignedCookie(t *testing.T) {
 	if cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookie SameSite = %v, want Lax", cookie.SameSite)
 	}
+	if !cookie.Secure {
+		t.Fatal("cookie Secure is false")
+	}
 	if cookie.Value == "" || cookie.Value == user.ID {
 		t.Fatalf("cookie value is not a signed token: %q", cookie.Value)
+	}
+	payload := decodeSessionPayload(t, cookie.Value)
+	if payload["user_id"] != user.ID {
+		t.Fatalf("payload user_id = %#v, want %q", payload["user_id"], user.ID)
+	}
+	if _, ok := payload["user"]; ok {
+		t.Fatalf("payload stores full user claims: %#v", payload)
+	}
+	if _, ok := payload["role"]; ok {
+		t.Fatalf("payload stores role claim: %#v", payload)
+	}
+	if _, ok := payload["email"]; ok {
+		t.Fatalf("payload stores email claim: %#v", payload)
 	}
 
 	request := httptest.NewRequest(http.MethodGet, "/api/session", nil)
@@ -102,8 +137,8 @@ func TestSessionManagerCreatesParsesAndClearsSignedCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseRequest returned error: %v", err)
 	}
-	if claims.User.ID != user.ID || claims.User.Email != user.Email || claims.User.Role != user.Role {
-		t.Fatalf("unexpected claims user: %#v", claims.User)
+	if claims.UserID != user.ID {
+		t.Fatalf("claims user ID = %q, want %q", claims.UserID, user.ID)
 	}
 
 	tampered := *cookie
@@ -122,6 +157,46 @@ func TestSessionManagerCreatesParsesAndClearsSignedCookie(t *testing.T) {
 	}
 	if !clearCookie.HttpOnly || clearCookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("clear cookie security attributes missing: %#v", clearCookie)
+	}
+	if !clearCookie.Secure {
+		t.Fatal("clear cookie Secure is false")
+	}
+}
+
+func TestSessionManagerSupportsInsecureDevelopmentCookies(t *testing.T) {
+	manager := NewSessionManager("test-secret", false)
+
+	recorder := httptest.NewRecorder()
+	if err := manager.SetSessionCookie(recorder, User{ID: "user-1"}); err != nil {
+		t.Fatalf("SetSessionCookie returned error: %v", err)
+	}
+	cookie := recorder.Result().Cookies()[0]
+	if cookie.Secure {
+		t.Fatal("cookie Secure is true for insecure manager")
+	}
+
+	recorder = httptest.NewRecorder()
+	manager.ClearSessionCookie(recorder)
+	clearCookie := recorder.Result().Cookies()[0]
+	if clearCookie.Secure {
+		t.Fatal("clear cookie Secure is true for insecure manager")
+	}
+}
+
+func TestSessionManagerRejectsExpiredTokens(t *testing.T) {
+	manager := NewSessionManager("test-secret", false)
+	token, err := manager.sign(SessionClaims{
+		UserID:    "user-1",
+		ExpiresAt: time.Now().UTC().Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("sign returned error: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/session", nil)
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	if _, err := manager.ParseRequest(request); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("expired token error = %v, want ErrInvalidSession", err)
 	}
 }
 
@@ -178,4 +253,21 @@ func newAuthTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("create users table: %v", err)
 	}
 	return database
+}
+
+func decodeSessionPayload(t *testing.T, token string) map[string]any {
+	t.Helper()
+	encodedPayload, _, ok := strings.Cut(token, ".")
+	if !ok {
+		t.Fatalf("session token missing signature separator: %q", token)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encodedPayload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal payload %q: %v", payload, err)
+	}
+	return decoded
 }

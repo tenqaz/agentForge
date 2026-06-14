@@ -29,7 +29,7 @@ func TestSessionRoutesLoginCurrentAndLogout(t *testing.T) {
 
 	router := NewRouter(Dependencies{
 		AuthRepository: auth.NewRepository(database),
-		SessionManager: auth.NewSessionManager("test-secret"),
+		SessionManager: auth.NewSessionManager("test-secret", false),
 	})
 
 	loginBody := bytes.NewBufferString(`{"email":"user@example.com","password":"secret-password"}`)
@@ -84,7 +84,7 @@ func TestSessionRoutesRejectInvalidCredentialsAndMissingSession(t *testing.T) {
 
 	router := NewRouter(Dependencies{
 		AuthRepository: auth.NewRepository(database),
-		SessionManager: auth.NewSessionManager("test-secret"),
+		SessionManager: auth.NewSessionManager("test-secret", false),
 	})
 
 	loginRecorder := httptest.NewRecorder()
@@ -96,6 +96,12 @@ func TestSessionRoutesRejectInvalidCredentialsAndMissingSession(t *testing.T) {
 		t.Fatal("invalid login set cookies")
 	}
 
+	trailingRecorder := httptest.NewRecorder()
+	router.ServeHTTP(trailingRecorder, httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"email":"user@example.com","password":"secret-password"} {}`)))
+	if trailingRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("trailing JSON status = %d, want 400", trailingRecorder.Code)
+	}
+
 	currentRecorder := httptest.NewRecorder()
 	router.ServeHTTP(currentRecorder, httptest.NewRequest(http.MethodGet, "/api/session", nil))
 	if currentRecorder.Code != http.StatusUnauthorized {
@@ -103,16 +109,84 @@ func TestSessionRoutesRejectInvalidCredentialsAndMissingSession(t *testing.T) {
 	}
 }
 
+func TestCurrentSessionReloadsUserFromRepository(t *testing.T) {
+	database := newHTTPTestDB(t)
+	hash, err := auth.HashPassword("secret-password")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('user-1', 'user@example.com', ?, 'user');
+	`, hash)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	repo := auth.NewRepository(database)
+	manager := auth.NewSessionManager("test-secret", false)
+	router := NewRouter(Dependencies{
+		AuthRepository: repo,
+		SessionManager: manager,
+	})
+	cookieRecorder := httptest.NewRecorder()
+	if err := manager.SetSessionCookie(cookieRecorder, auth.User{ID: "user-1", Email: "stale@example.com", Role: auth.RoleAdmin}); err != nil {
+		t.Fatalf("SetSessionCookie returned error: %v", err)
+	}
+	sessionCookie := cookieRecorder.Result().Cookies()[0]
+
+	_, err = database.Exec(`
+		UPDATE users
+		SET email = 'updated@example.com', role = 'admin'
+		WHERE id = 'user-1';
+	`)
+	if err != nil {
+		t.Fatalf("update user: %v", err)
+	}
+	currentRequest := httptest.NewRequest(http.MethodGet, "/api/session", nil)
+	currentRequest.AddCookie(sessionCookie)
+	currentRecorder := httptest.NewRecorder()
+	router.ServeHTTP(currentRecorder, currentRequest)
+	if currentRecorder.Code != http.StatusOK {
+		t.Fatalf("current session status = %d, body = %s", currentRecorder.Code, currentRecorder.Body.String())
+	}
+	assertUserResponse(t, currentRecorder.Body.Bytes(), "user-1", "updated@example.com", auth.RoleAdmin)
+
+	_, err = database.Exec(`DELETE FROM users WHERE id = 'user-1';`)
+	if err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	deletedRequest := httptest.NewRequest(http.MethodGet, "/api/session", nil)
+	deletedRequest.AddCookie(sessionCookie)
+	deletedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(deletedRecorder, deletedRequest)
+	if deletedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("deleted user session status = %d, want 401", deletedRecorder.Code)
+	}
+}
+
 func TestSessionMiddlewareAddsAuthenticatedUser(t *testing.T) {
-	manager := auth.NewSessionManager("test-secret")
+	database := newHTTPTestDB(t)
+	hash, err := auth.HashPassword("secret-password")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
 	user := auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES (?, ?, ?, ?);
+	`, user.ID, user.Email, hash, user.Role)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	manager := auth.NewSessionManager("test-secret", false)
 	cookieRecorder := httptest.NewRecorder()
 	if err := manager.SetSessionCookie(cookieRecorder, user); err != nil {
 		t.Fatalf("SetSessionCookie returned error: %v", err)
 	}
 
 	var got auth.User
-	handler := SessionMiddleware(manager)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := SessionMiddleware(manager, auth.NewRepository(database))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, _ = UserFromContext(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 	}))

@@ -16,25 +16,27 @@ const SessionCookieName = "agentforge_session"
 var ErrInvalidSession = errors.New("invalid session")
 
 type SessionClaims struct {
-	User      User      `json:"user"`
+	UserID    string    `json:"user_id"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type SessionManager struct {
 	secret   []byte
 	duration time.Duration
+	secure   bool
 }
 
-func NewSessionManager(secret string) *SessionManager {
+func NewSessionManager(secret string, secure bool) *SessionManager {
 	return &SessionManager{
 		secret:   []byte(secret),
 		duration: 7 * 24 * time.Hour,
+		secure:   secure,
 	}
 }
 
 func (m *SessionManager) SetSessionCookie(w http.ResponseWriter, user User) error {
 	claims := SessionClaims{
-		User:      User{ID: user.ID, Email: user.Email, Role: user.Role},
+		UserID:    user.ID,
 		ExpiresAt: time.Now().UTC().Add(m.duration),
 	}
 	token, err := m.sign(claims)
@@ -48,6 +50,7 @@ func (m *SessionManager) SetSessionCookie(w http.ResponseWriter, user User) erro
 		Expires:  claims.ExpiresAt,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   m.secure,
 	})
 	return nil
 }
@@ -69,6 +72,7 @@ func (m *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 		Expires:  time.Unix(0, 0).UTC(),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   m.secure,
 	})
 }
 
@@ -99,7 +103,7 @@ func (m *SessionManager) parse(token string) (SessionClaims, error) {
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		return SessionClaims{}, ErrInvalidSession
 	}
-	if claims.User.ID == "" || claims.User.Email == "" || claims.User.Role == "" {
+	if claims.UserID == "" {
 		return SessionClaims{}, ErrInvalidSession
 	}
 	if !claims.ExpiresAt.After(time.Now().UTC()) {

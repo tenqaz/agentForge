@@ -9,6 +9,7 @@ import (
 
 type AuthRepository interface {
 	FindUserByEmail(ctx context.Context, email string) (auth.User, error)
+	FindUserByID(ctx context.Context, userID string) (auth.User, error)
 	PasswordHashForUser(ctx context.Context, userID string) (string, error)
 }
 

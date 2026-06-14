@@ -11,12 +11,15 @@ type contextKey string
 
 const userContextKey contextKey = "user"
 
-func SessionMiddleware(manager *auth.SessionManager) func(http.Handler) http.Handler {
+func SessionMiddleware(manager *auth.SessionManager, authRepository AuthRepository) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, err := manager.ParseRequest(r)
 			if err == nil {
-				r = r.WithContext(context.WithValue(r.Context(), userContextKey, claims.User))
+				user, err := authRepository.FindUserByID(r.Context(), claims.UserID)
+				if err == nil {
+					r = r.WithContext(context.WithValue(r.Context(), userContextKey, user))
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
