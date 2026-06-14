@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"agentforge.local/services/api/internal/auth"
+	"agentforge.local/services/api/internal/templates"
 )
 
 type AuthRepository interface {
@@ -14,8 +15,9 @@ type AuthRepository interface {
 }
 
 type Dependencies struct {
-	AuthRepository AuthRepository
-	SessionManager *auth.SessionManager
+	AuthRepository  AuthRepository
+	SessionManager  *auth.SessionManager
+	TemplateService *templates.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -24,5 +26,12 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/sessions", sessionHandlers.Create)
 	mux.HandleFunc("GET /api/session", sessionHandlers.Current)
 	mux.HandleFunc("DELETE /api/session", sessionHandlers.Delete)
+	if deps.TemplateService != nil {
+		templateHandlers := NewTemplateHandlers(deps.TemplateService)
+		templateHandlers.Register(mux)
+	}
+	if deps.SessionManager != nil && deps.AuthRepository != nil {
+		return SessionMiddleware(deps.SessionManager, deps.AuthRepository)(mux)
+	}
 	return mux
 }
