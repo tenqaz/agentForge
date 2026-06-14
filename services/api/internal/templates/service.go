@@ -15,6 +15,11 @@ type Service struct {
 	store      *FileStore
 }
 
+type DeleteSkillResult struct {
+	Template Template
+	Cloned   bool
+}
+
 func NewService(repository *Repository, store *FileStore) *Service {
 	return &Service{repository: repository, store: store}
 }
@@ -43,7 +48,12 @@ func (s *Service) Create(ctx context.Context, createdBy, name, description strin
 		SkillsPath:      paths.SkillsPath,
 		CreatedBy:       createdBy,
 	}
-	return s.repository.CreateTemplate(ctx, template)
+	created, err := s.repository.CreateTemplate(ctx, template)
+	if err != nil {
+		_ = s.store.DeleteTemplate(template)
+		return Template{}, err
+	}
+	return created, nil
 }
 
 func (s *Service) ListPublished(ctx context.Context) ([]Template, error) {
@@ -150,6 +160,7 @@ func (s *Service) AddSkill(ctx context.Context, templateID, skillName, skillMD s
 		Checksum:   checksum,
 	})
 	if err != nil {
+		_ = s.store.DeleteSkill(Skill{SkillPath: skillPath})
 		if errors.Is(err, ErrConflict) {
 			return Skill{}, ErrConflict
 		}
@@ -176,40 +187,49 @@ func (s *Service) GetSkill(ctx context.Context, templateID, skillID string) (Ski
 	return skill, content, nil
 }
 
-func (s *Service) DeleteSkill(ctx context.Context, templateID, skillID string) error {
+func (s *Service) DeleteSkill(ctx context.Context, templateID, skillID string) (DeleteSkillResult, error) {
 	sourceSkill, err := s.repository.GetSkill(ctx, templateID, skillID)
 	if errors.Is(err, ErrSkillNotFound) {
-		return ErrNotFound
+		return DeleteSkillResult{}, ErrNotFound
 	}
 	if err != nil {
-		return err
+		return DeleteSkillResult{}, err
 	}
 	template, err := s.repository.GetTemplate(ctx, templateID)
 	if err != nil {
-		return err
+		return DeleteSkillResult{}, err
 	}
+	originalTemplateID := template.ID
 	template, err = s.ensureDraft(ctx, template)
 	if err != nil {
-		return err
+		return DeleteSkillResult{}, err
 	}
 	skill := sourceSkill
 	if template.ID != templateID {
 		skill, err = s.repository.FindSkillByName(ctx, template.ID, sourceSkill.SkillName)
 		if err != nil {
-			return err
+			return DeleteSkillResult{}, err
 		}
+	}
+	trashDir, err := s.store.MoveSkillToTrash(skill)
+	if err != nil {
+		return DeleteSkillResult{}, err
 	}
 	if err := s.repository.DeleteSkill(ctx, template.ID, skill.ID); err != nil {
+		_ = s.store.RestoreSkillFromTrash(skill, trashDir)
 		if errors.Is(err, ErrNotFound) {
-			return ErrNotFound
+			return DeleteSkillResult{}, ErrNotFound
 		}
-		return err
+		return DeleteSkillResult{}, err
 	}
-	if err := s.store.DeleteSkill(skill); err != nil {
-		return err
+	if err := s.store.RemoveTrash(trashDir); err != nil {
+		return DeleteSkillResult{}, err
 	}
-	_, err = s.refreshChecksum(ctx, template)
-	return err
+	template, err = s.refreshChecksum(ctx, template)
+	if err != nil {
+		return DeleteSkillResult{}, err
+	}
+	return DeleteSkillResult{Template: template, Cloned: template.ID != originalTemplateID}, nil
 }
 
 func (s *Service) Publish(ctx context.Context, templateID string) (Template, error) {
@@ -264,15 +284,20 @@ func (s *Service) ensureDraft(ctx context.Context, template Template) (Template,
 	}
 	next, err = s.repository.CreateTemplate(ctx, next)
 	if err != nil {
+		_ = s.store.DeleteTemplate(next)
 		return Template{}, err
 	}
 	sourceSkills, err := s.repository.ListSkills(ctx, template.ID)
 	if err != nil {
+		_ = s.repository.DeleteTemplate(ctx, next.ID)
+		_ = s.store.DeleteTemplate(next)
 		return Template{}, err
 	}
 	for _, sourceSkill := range sourceSkills {
 		content, err := os.ReadFile(filepath.Join(paths.SkillsPath, sourceSkill.SkillName, "SKILL.md"))
 		if err != nil {
+			_ = s.repository.DeleteTemplate(ctx, next.ID)
+			_ = s.store.DeleteTemplate(next)
 			return Template{}, err
 		}
 		if _, err := s.repository.CreateSkill(ctx, Skill{
@@ -282,6 +307,8 @@ func (s *Service) ensureDraft(ctx context.Context, template Template) (Template,
 			SkillPath:  filepath.Join(paths.SkillsPath, sourceSkill.SkillName, "SKILL.md"),
 			Checksum:   checksumString(string(content)),
 		}); err != nil {
+			_ = s.repository.DeleteTemplate(ctx, next.ID)
+			_ = s.store.DeleteTemplate(next)
 			return Template{}, err
 		}
 	}

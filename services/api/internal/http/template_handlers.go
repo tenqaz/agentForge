@@ -21,6 +21,7 @@ func NewTemplateHandlers(service *templates.Service) *TemplateHandlers {
 func (h *TemplateHandlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/templates", h.ListPublished)
 	mux.HandleFunc("GET /api/templates/{id}", h.GetPublished)
+	mux.HandleFunc("GET /api/admin/templates", h.ListAdmin)
 	mux.HandleFunc("POST /api/admin/templates", h.Create)
 	mux.HandleFunc("PUT /api/admin/templates/{id}", h.UpdateMetadata)
 	mux.HandleFunc("DELETE /api/admin/templates/{id}", h.Archive)
@@ -42,7 +43,7 @@ func (h *TemplateHandlers) ListPublished(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "internal_error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"templates": templateList})
+	writeJSON(w, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
 }
 
 func (h *TemplateHandlers) GetPublished(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +56,19 @@ func (h *TemplateHandlers) GetPublished(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: template})
+	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+}
+
+func (h *TemplateHandlers) ListAdmin(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireAdminUser(w, r); !ok {
+		return
+	}
+	templateList, err := h.service.ListAdmin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
 }
 
 func (h *TemplateHandlers) Create(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +88,7 @@ func (h *TemplateHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, templateResponse{Template: template})
+	writeJSON(w, http.StatusCreated, templateResponse{Template: newTemplateDTO(template)})
 }
 
 func (h *TemplateHandlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +107,7 @@ func (h *TemplateHandlers) UpdateMetadata(w http.ResponseWriter, r *http.Request
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: template})
+	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
 func (h *TemplateHandlers) Archive(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +146,7 @@ func (h *TemplateHandlers) PutSoul(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: template})
+	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
 func (h *TemplateHandlers) GetUser(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +174,7 @@ func (h *TemplateHandlers) PutUser(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: template})
+	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
 func (h *TemplateHandlers) ListSkills(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +186,7 @@ func (h *TemplateHandlers) ListSkills(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"skills": skills})
+	writeJSON(w, http.StatusOK, map[string]any{"skills": skillDTOs(skills)})
 }
 
 func (h *TemplateHandlers) AddSkill(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +205,7 @@ func (h *TemplateHandlers) AddSkill(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, skillResponse{Skill: skill})
+	writeJSON(w, http.StatusCreated, skillResponse{Skill: newSkillDTO(skill)})
 }
 
 func (h *TemplateHandlers) GetSkill(w http.ResponseWriter, r *http.Request) {
@@ -204,15 +217,20 @@ func (h *TemplateHandlers) GetSkill(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, skillResponse{Skill: skill, Content: content})
+	writeJSON(w, http.StatusOK, skillResponse{Skill: newSkillDTO(skill), Content: content})
 }
 
 func (h *TemplateHandlers) DeleteSkill(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireAdminUser(w, r); !ok {
 		return
 	}
-	if err := h.service.DeleteSkill(r.Context(), r.PathValue("id"), r.PathValue("skillId")); err != nil {
+	result, err := h.service.DeleteSkill(r.Context(), r.PathValue("id"), r.PathValue("skillId"))
+	if err != nil {
 		writeTemplateError(w, err)
+		return
+	}
+	if result.Cloned {
+		writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(result.Template)})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -227,7 +245,7 @@ func (h *TemplateHandlers) Publish(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: template})
+	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
 func (h *TemplateHandlers) Unpublish(w http.ResponseWriter, r *http.Request) {
@@ -239,11 +257,11 @@ func (h *TemplateHandlers) Unpublish(w http.ResponseWriter, r *http.Request) {
 		writeTemplateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: template})
+	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
 type templateResponse struct {
-	Template templates.Template `json:"template"`
+	Template templateDTO `json:"template"`
 }
 
 type contentResponse struct {
@@ -251,8 +269,66 @@ type contentResponse struct {
 }
 
 type skillResponse struct {
-	Skill   templates.Skill `json:"skill"`
-	Content string          `json:"content,omitempty"`
+	Skill   skillDTO `json:"skill"`
+	Content string   `json:"content,omitempty"`
+}
+
+type templateDTO struct {
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Status      templates.Status `json:"status"`
+	Version     int              `json:"version"`
+	CreatedAt   string           `json:"createdAt"`
+	UpdatedAt   string           `json:"updatedAt"`
+	PublishedAt *string          `json:"publishedAt,omitempty"`
+}
+
+func newTemplateDTO(template templates.Template) templateDTO {
+	return templateDTO{
+		ID:          template.ID,
+		Name:        template.Name,
+		Description: template.Description,
+		Status:      template.Status,
+		Version:     template.Version,
+		CreatedAt:   template.CreatedAt,
+		UpdatedAt:   template.UpdatedAt,
+		PublishedAt: template.PublishedAt,
+	}
+}
+
+func templateDTOs(templateList []templates.Template) []templateDTO {
+	result := make([]templateDTO, 0, len(templateList))
+	for _, template := range templateList {
+		result = append(result, newTemplateDTO(template))
+	}
+	return result
+}
+
+type skillDTO struct {
+	ID         string `json:"id"`
+	TemplateID string `json:"templateId"`
+	SkillName  string `json:"skillName"`
+	Checksum   string `json:"checksum"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+func newSkillDTO(skill templates.Skill) skillDTO {
+	return skillDTO{
+		ID:         skill.ID,
+		TemplateID: skill.TemplateID,
+		SkillName:  skill.SkillName,
+		Checksum:   skill.Checksum,
+		CreatedAt:  skill.CreatedAt,
+	}
+}
+
+func skillDTOs(skills []templates.Skill) []skillDTO {
+	result := make([]skillDTO, 0, len(skills))
+	for _, skill := range skills {
+		result = append(result, newSkillDTO(skill))
+	}
+	return result
 }
 
 func requireAdminUser(w http.ResponseWriter, r *http.Request) (auth.User, bool) {

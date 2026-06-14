@@ -30,6 +30,17 @@ func (r *Repository) CreateTemplate(ctx context.Context, template Template) (Tem
 	return r.GetTemplate(ctx, template.ID)
 }
 
+func (r *Repository) DeleteTemplate(ctx context.Context, id string) error {
+	result, err := r.database.ExecContext(ctx, `
+		DELETE FROM agent_templates
+		WHERE id = ?;
+	`, id)
+	if err != nil {
+		return err
+	}
+	return requireAffected(result)
+}
+
 func (r *Repository) GetTemplate(ctx context.Context, id string) (Template, error) {
 	var template Template
 	var publishedAt sql.NullString
@@ -162,6 +173,9 @@ func (r *Repository) CreateSkill(ctx context.Context, skill Skill) (Skill, error
 		VALUES (?, ?, ?, ?, ?);
 	`, skill.ID, skill.TemplateID, skill.SkillName, skill.SkillPath, skill.Checksum)
 	if err != nil {
+		if isUniqueSkillNameConstraint(err) {
+			return Skill{}, ErrConflict
+		}
 		return Skill{}, err
 	}
 	return r.GetSkill(ctx, skill.TemplateID, skill.ID)
@@ -242,4 +256,8 @@ func requireAffected(result sql.Result) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func isUniqueSkillNameConstraint(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: template_skills.template_id, template_skills.skill_name")
 }

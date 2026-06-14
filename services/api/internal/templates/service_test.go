@@ -125,7 +125,7 @@ func TestServiceRejectsDuplicateSkillNameAndDeletesSkillDirectory(t *testing.T) 
 		t.Fatalf("duplicate AddSkill error = %v, want ErrConflict", err)
 	}
 
-	if err := service.DeleteSkill(ctx, template.ID, skill.ID); err != nil {
+	if _, err := service.DeleteSkill(ctx, template.ID, skill.ID); err != nil {
 		t.Fatalf("DeleteSkill returned error: %v", err)
 	}
 	if _, _, err := service.GetSkill(ctx, template.ID, skill.ID); !errors.Is(err, ErrNotFound) {
@@ -134,6 +134,85 @@ func TestServiceRejectsDuplicateSkillNameAndDeletesSkillDirectory(t *testing.T) 
 	skillDir := filepath.Join(dataDir, "templates", template.ID, "versions", "1", "skills", "faq")
 	if _, err := os.Stat(skillDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("skill dir stat error = %v, want not exist", err)
+	}
+}
+
+func TestServiceRejectsInvalidSkillName(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+	template, err := service.Create(ctx, "admin-1", "Support Agent", "")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	for _, skillName := range []string{"../x", "a/b"} {
+		if _, err := service.AddSkill(ctx, template.ID, skillName, "# Skill\n"); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("AddSkill(%q) error = %v, want ErrInvalidInput", skillName, err)
+		}
+	}
+}
+
+func TestRepositoryCreateSkillMapsUniqueConstraintToConflict(t *testing.T) {
+	database := newTemplatesTestDB(t)
+	repository := NewRepository(database)
+	ctx := context.Background()
+	template := Template{
+		ID:              "template-1",
+		Name:            "Support Agent",
+		Status:          StatusDraft,
+		Version:         1,
+		TemplatePath:    "/tmp/template-1",
+		ContentChecksum: checksumString(""),
+		SoulMDPath:      "/tmp/template-1/SOUL.md",
+		UserMDPath:      "/tmp/template-1/USER.md",
+		SkillsPath:      "/tmp/template-1/skills",
+		CreatedBy:       "admin-1",
+	}
+	if _, err := repository.CreateTemplate(ctx, template); err != nil {
+		t.Fatalf("CreateTemplate returned error: %v", err)
+	}
+	if _, err := repository.CreateSkill(ctx, Skill{
+		ID:         "skill-1",
+		TemplateID: template.ID,
+		SkillName:  "faq",
+		SkillPath:  "/tmp/template-1/skills/faq/SKILL.md",
+		Checksum:   checksumString("# FAQ\n"),
+	}); err != nil {
+		t.Fatalf("CreateSkill first returned error: %v", err)
+	}
+	if _, err := repository.CreateSkill(ctx, Skill{
+		ID:         "skill-2",
+		TemplateID: template.ID,
+		SkillName:  "faq",
+		SkillPath:  "/tmp/template-1/skills/faq/SKILL.md",
+		Checksum:   checksumString("# FAQ\n"),
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("CreateSkill duplicate error = %v, want ErrConflict", err)
+	}
+}
+
+func TestServiceDeleteSkillKeepsDBRecordWhenFileDeletionFails(t *testing.T) {
+	service, dataDir := newTestService(t)
+	ctx := context.Background()
+	template, err := service.Create(ctx, "admin-1", "Support Agent", "")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	skill, err := service.AddSkill(ctx, template.ID, "faq", "# FAQ\n")
+	if err != nil {
+		t.Fatalf("AddSkill returned error: %v", err)
+	}
+	skillsDir := filepath.Join(dataDir, "templates", template.ID, "versions", "1", "skills")
+	if err := os.Chmod(skillsDir, 0o555); err != nil {
+		t.Fatalf("chmod skills dir read-only: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
+
+	if _, err := service.DeleteSkill(ctx, template.ID, skill.ID); err == nil {
+		t.Fatal("DeleteSkill returned nil error, want file deletion failure")
+	}
+	if _, _, err := service.GetSkill(ctx, template.ID, skill.ID); err != nil {
+		t.Fatalf("GetSkill after failed delete error = %v, want record retained", err)
 	}
 }
 

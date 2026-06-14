@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 )
 
 type FileStore struct {
@@ -88,6 +89,44 @@ func (s *FileStore) ReadSkill(skill Skill) (string, error) {
 
 func (s *FileStore) DeleteSkill(skill Skill) error {
 	return os.RemoveAll(filepath.Dir(skill.SkillPath))
+}
+
+func (s *FileStore) MoveSkillToTrash(skill Skill) (string, error) {
+	skillDir := filepath.Dir(skill.SkillPath)
+	trashDir := filepath.Join(s.dataDir, ".trash", "skill-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+	if _, err := os.Stat(skillDir); errors.Is(err, os.ErrNotExist) {
+		return "", ErrNotFound
+	} else if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(trashDir), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Rename(skillDir, trashDir); err != nil {
+		return "", err
+	}
+	return trashDir, nil
+}
+
+func (s *FileStore) RestoreSkillFromTrash(skill Skill, trashDir string) error {
+	if trashDir == "" {
+		return nil
+	}
+	return os.Rename(trashDir, filepath.Dir(skill.SkillPath))
+}
+
+func (s *FileStore) RemoveTrash(path string) error {
+	if path == "" {
+		return nil
+	}
+	return os.RemoveAll(path)
+}
+
+func (s *FileStore) DeleteTemplate(template Template) error {
+	if template.TemplatePath == "" {
+		return nil
+	}
+	return os.RemoveAll(filepath.Dir(filepath.Dir(template.TemplatePath)))
 }
 
 func (s *FileStore) Checksum(template Template) (string, error) {

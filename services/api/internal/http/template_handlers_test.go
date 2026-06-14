@@ -51,6 +51,7 @@ func TestAdminTemplateFlowPublishesTemplateForPublicRoutes(t *testing.T) {
 	if listRecorder.Code != http.StatusOK {
 		t.Fatalf("public list status = %d, body = %s", listRecorder.Code, listRecorder.Body.String())
 	}
+	assertNoPathFields(t, listRecorder.Body.Bytes())
 	var listResponse struct {
 		Templates []templates.Template `json:"templates"`
 	}
@@ -65,6 +66,53 @@ func TestAdminTemplateFlowPublishesTemplateForPublicRoutes(t *testing.T) {
 	router.ServeHTTP(detailRecorder, httptest.NewRequest(http.MethodGet, "/api/templates/"+created.ID, nil))
 	if detailRecorder.Code != http.StatusOK {
 		t.Fatalf("public detail status = %d, body = %s", detailRecorder.Code, detailRecorder.Body.String())
+	}
+	assertNoPathFields(t, detailRecorder.Body.Bytes())
+}
+
+func TestAdminCanListDraftTemplatesWithoutPathFields(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	listRecorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/templates", nil)
+	request.AddCookie(adminCookie)
+	router.ServeHTTP(listRecorder, request)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("admin list status = %d, body = %s", listRecorder.Code, listRecorder.Body.String())
+	}
+	assertNoPathFields(t, listRecorder.Body.Bytes())
+	if !bytes.Contains(listRecorder.Body.Bytes(), []byte(templateID)) {
+		t.Fatalf("admin list body %s does not include draft template %s", listRecorder.Body.String(), templateID)
+	}
+}
+
+func TestPublicTemplateDetailHidesDraftAndArchivedTemplates(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	draftRecorder := httptest.NewRecorder()
+	router.ServeHTTP(draftRecorder, httptest.NewRequest(http.MethodGet, "/api/templates/"+templateID, nil))
+	if draftRecorder.Code != http.StatusNotFound {
+		t.Fatalf("draft public detail status = %d, want 404", draftRecorder.Code)
+	}
+
+	if publishRecorder := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+templateID+"/publication", `{}`, adminCookie); publishRecorder.Code != http.StatusOK {
+		t.Fatalf("publish status = %d, body = %s", publishRecorder.Code, publishRecorder.Body.String())
+	}
+	archiveRecorder := httptest.NewRecorder()
+	archiveRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID, nil)
+	archiveRequest.AddCookie(adminCookie)
+	router.ServeHTTP(archiveRecorder, archiveRequest)
+	if archiveRecorder.Code != http.StatusNoContent {
+		t.Fatalf("archive status = %d, body = %s", archiveRecorder.Code, archiveRecorder.Body.String())
+	}
+	archivedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(archivedRecorder, httptest.NewRequest(http.MethodGet, "/api/templates/"+templateID, nil))
+	if archivedRecorder.Code != http.StatusNotFound {
+		t.Fatalf("archived public detail status = %d, want 404", archivedRecorder.Code)
 	}
 }
 
@@ -91,6 +139,7 @@ func TestAdminSkillRoutesRejectDuplicateAndDoNotExposeEditRoutes(t *testing.T) {
 	if first.Code != http.StatusCreated {
 		t.Fatalf("first skill status = %d, body = %s", first.Code, first.Body.String())
 	}
+	assertNoPathFields(t, first.Body.Bytes())
 	skill := decodeSkillResponse(t, first.Body.Bytes()).Skill
 	duplicate := doJSON(t, router, http.MethodPost, "/api/admin/templates/"+templateID+"/skills", `{"skillName":"faq","skillMD":"# duplicate\n"}`, adminCookie)
 	if duplicate.Code != http.StatusConflict {
@@ -104,6 +153,7 @@ func TestAdminSkillRoutesRejectDuplicateAndDoNotExposeEditRoutes(t *testing.T) {
 	if getSkill.Code != http.StatusOK {
 		t.Fatalf("get skill status = %d, body = %s", getSkill.Code, getSkill.Body.String())
 	}
+	assertNoPathFields(t, getSkill.Body.Bytes())
 
 	editSkill := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+templateID+"/skills/"+skill.ID, `{"skillMD":"# edited\n"}`, adminCookie)
 	if editSkill.Code != http.StatusMethodNotAllowed && editSkill.Code != http.StatusNotFound {
@@ -152,6 +202,33 @@ func TestEditingPublishedTemplateReturnsNewDraft(t *testing.T) {
 	if originalSoul.Code != http.StatusOK || !bytes.Contains(originalSoul.Body.Bytes(), []byte("Original soul.")) {
 		t.Fatalf("original soul response status = %d, body = %s", originalSoul.Code, originalSoul.Body.String())
 	}
+}
+
+func TestDeletingPublishedSkillReturnsNewDraft(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+	addSkillRecorder := doJSON(t, router, http.MethodPost, "/api/admin/templates/"+templateID+"/skills", `{"skillName":"faq","skillMD":"# FAQ\n"}`, adminCookie)
+	if addSkillRecorder.Code != http.StatusCreated {
+		t.Fatalf("add skill status = %d, body = %s", addSkillRecorder.Code, addSkillRecorder.Body.String())
+	}
+	skill := decodeSkillResponse(t, addSkillRecorder.Body.Bytes()).Skill
+	if publishRecorder := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+templateID+"/publication", `{}`, adminCookie); publishRecorder.Code != http.StatusOK {
+		t.Fatalf("publish status = %d, body = %s", publishRecorder.Code, publishRecorder.Body.String())
+	}
+
+	deleteRecorder := httptest.NewRecorder()
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID+"/skills/"+skill.ID, nil)
+	deleteRequest.AddCookie(adminCookie)
+	router.ServeHTTP(deleteRecorder, deleteRequest)
+	if deleteRecorder.Code != http.StatusOK {
+		t.Fatalf("delete published skill status = %d, body = %s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+	response := decodeTemplateResponse(t, deleteRecorder.Body.Bytes())
+	if response.Template.ID == templateID || response.Template.Version != 2 || response.Template.Status != templates.StatusDraft {
+		t.Fatalf("delete published skill response = %#v, original id = %s", response.Template, templateID)
+	}
+	assertNoPathFields(t, deleteRecorder.Body.Bytes())
 }
 
 func createCompleteDraftViaHTTP(t *testing.T, router http.Handler, adminCookie *http.Cookie) string {
@@ -280,4 +357,13 @@ func decodeSkillResponse(t *testing.T, body []byte) struct {
 		t.Fatalf("unmarshal skill response %q: %v", body, err)
 	}
 	return response
+}
+
+func assertNoPathFields(t *testing.T, body []byte) {
+	t.Helper()
+	for _, forbidden := range []string{"templatePath", "soulMDPath", "userMDPath", "skillsPath", "skillPath", "/templates/"} {
+		if bytes.Contains(body, []byte(forbidden)) {
+			t.Fatalf("response leaked %q: %s", forbidden, body)
+		}
+	}
 }
