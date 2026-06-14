@@ -2,7 +2,10 @@ module agentforge.local/services/api
 
 go 1.24.13
 
-require modernc.org/sqlite v1.39.0
+require (
+	golang.org/x/crypto v0.41.0
+	modernc.org/sqlite v1.39.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
