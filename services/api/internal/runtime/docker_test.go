@@ -13,7 +13,7 @@ func TestDockerRunnerEnsureRunningBuildsExpectedCommand(t *testing.T) {
 	workdir := t.TempDir()
 	logPath := filepath.Join(workdir, "docker-args.log")
 	stubPath := filepath.Join(workdir, "docker")
-	script := "#!/bin/sh\nprintf '%s\n' \"$@\" >" + shellQuote(logPath) + "\nif [ \"$1\" = \"inspect\" ]; then\n  exit 1\nfi\nif [ \"$1\" = \"run\" ]; then\n  printf 'container-123'\nfi\n"
+	script := "#!/bin/sh\nprintf '%s\n' \"$@\" >" + shellQuote(logPath) + "\nif [ \"$1\" = \"inspect\" ]; then\n  printf 'Error: No such object: %s' \"$4\" >&2\n  exit 1\nfi\nif [ \"$1\" = \"run\" ]; then\n  printf 'container-123'\nfi\n"
 	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write stub docker: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestDockerRunnerEnsureRunningBuildsExpectedCommand(t *testing.T) {
 	homePath := filepath.Join(workdir, "relative", "..", "hermes-home")
 	spec := ContainerSpec{
 		AgentID:       "agent-internal-id",
-		ContainerName: "",
+		ContainerName: "Friendly Agent Name",
 		HermesHome:    homePath,
 		Image:         "nousresearch/hermes-agent:v2026.6.5",
 		Memory:        "500m",
@@ -77,6 +77,92 @@ func TestDockerRunnerInspectParsesRunningState(t *testing.T) {
 	}
 	if !status.Exists || !status.Running || status.Status != "running" {
 		t.Fatalf("Inspect status = %#v", status)
+	}
+}
+
+func TestDockerRunnerEnsureRunningStartsExistingStoppedContainer(t *testing.T) {
+	ctx := context.Background()
+	workdir := t.TempDir()
+	logPath := filepath.Join(workdir, "docker-args.log")
+	stubPath := filepath.Join(workdir, "docker")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" >>" + shellQuote(logPath) + "\n" +
+		"if [ \"$1\" = \"inspect\" ]; then\n" +
+		"  printf '{\"Running\":false,\"Status\":\"exited\"}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"start\" ]; then\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 1\n"
+	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write stub docker: %v", err)
+	}
+
+	runner := NewDockerRunner(stubPath)
+	if err := runner.EnsureRunning(ctx, ContainerSpec{
+		AgentID:    "agent-internal-id",
+		HermesHome: filepath.Join(workdir, "hermes-home"),
+		Image:      "nousresearch/hermes-agent:v2026.6.5",
+		Memory:     "500m",
+		CPUs:       "0.5",
+	}); err != nil {
+		t.Fatalf("EnsureRunning returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read docker args log: %v", err)
+	}
+	logged := string(data)
+	if !strings.Contains(logged, "inspect\n--format\n{{json .State}}\nagentforge-hermes-agent-internal-id") {
+		t.Fatalf("missing inspect call: %s", logged)
+	}
+	if !strings.Contains(logged, "start\nagentforge-hermes-agent-internal-id") {
+		t.Fatalf("missing start call: %s", logged)
+	}
+	if strings.Contains(logged, "\nrun\n") {
+		t.Fatalf("unexpected docker run call: %s", logged)
+	}
+}
+
+func TestDockerRunnerEnsureRunningNoopsWhenContainerAlreadyRunning(t *testing.T) {
+	ctx := context.Background()
+	workdir := t.TempDir()
+	logPath := filepath.Join(workdir, "docker-args.log")
+	stubPath := filepath.Join(workdir, "docker")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" >>" + shellQuote(logPath) + "\n" +
+		"if [ \"$1\" = \"inspect\" ]; then\n" +
+		"  printf '{\"Running\":true,\"Status\":\"running\"}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 1\n"
+	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write stub docker: %v", err)
+	}
+
+	runner := NewDockerRunner(stubPath)
+	if err := runner.EnsureRunning(ctx, ContainerSpec{
+		AgentID:    "agent-internal-id",
+		HermesHome: filepath.Join(workdir, "hermes-home"),
+		Image:      "nousresearch/hermes-agent:v2026.6.5",
+		Memory:     "500m",
+		CPUs:       "0.5",
+	}); err != nil {
+		t.Fatalf("EnsureRunning returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read docker args log: %v", err)
+	}
+	logged := string(data)
+	if !strings.Contains(logged, "inspect\n--format\n{{json .State}}\nagentforge-hermes-agent-internal-id") {
+		t.Fatalf("missing inspect call: %s", logged)
+	}
+	if strings.Contains(logged, "\nstart\n") || strings.Contains(logged, "\nrun\n") {
+		t.Fatalf("unexpected start/run call: %s", logged)
 	}
 }
 

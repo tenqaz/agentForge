@@ -75,6 +75,99 @@ func TestRuntimeWorkerProvisionAgentTransitionsToRunningAndRecordsEvents(t *test
 	mustReadContains(t, filepath.Join(homeRoot, "agents", agentID, "hermes-home", "memories", "USER.md"), "User memory")
 }
 
+func TestRuntimeWorkerProvisionAgentNoopsWhenAgentAlreadyRunning(t *testing.T) {
+	database := newRuntimeWorkerTestDB(t)
+	ctx := context.Background()
+	homeRoot := t.TempDir()
+	agentID := insertRuntimeWorkerAgent(t, database, homeRoot, agents.StatusRunning)
+	if _, err := database.ExecContext(ctx, `
+		UPDATE agents
+		SET runtime_id = ?
+		WHERE id = ?;
+	`, runtime.DefaultContainerName(agentID), agentID); err != nil {
+		t.Fatalf("seed runtime id: %v", err)
+	}
+	jobID := insertRuntimeWorkerJob(t, database, agentID, jobs.TypeProvisionAgent)
+
+	worker := jobs.NewRuntimeWorker(jobs.RuntimeWorkerDependencies{
+		Database:    database,
+		RuntimeJobs: jobs.NewRuntimeRepository(database),
+		HomeBuilder: runtime.NewHomeBuilder(),
+		Runner: &stubRunner{
+			status: runtime.ContainerStatus{Exists: true, Running: true, Status: "running"},
+		},
+		HermesImage:  "nousresearch/hermes-agent:v2026.6.5",
+		HermesMemory: "500m",
+		HermesCPUs:   "0.5",
+	})
+
+	if err := worker.ProcessJob(ctx, jobID); err != nil {
+		t.Fatalf("ProcessJob returned error: %v", err)
+	}
+
+	agent, err := agents.NewRepository(database).Get(ctx, agentID)
+	if err != nil {
+		t.Fatalf("Get agent: %v", err)
+	}
+	if agent.Status != agents.StatusRunning {
+		t.Fatalf("agent status = %s, want %s", agent.Status, agents.StatusRunning)
+	}
+
+	job, err := jobs.NewRuntimeRepository(database).GetByID(ctx, agentID, jobID)
+	if err != nil {
+		t.Fatalf("Get job: %v", err)
+	}
+	if job.Status != jobs.StatusSucceeded {
+		t.Fatalf("job status = %s, want %s", job.Status, jobs.StatusSucceeded)
+	}
+
+	events := listRuntimeEvents(t, database, agentID)
+	if len(events) != 0 {
+		t.Fatalf("unexpected runtime events = %#v", events)
+	}
+}
+
+func TestRuntimeWorkerProvisionAgentPreservesExistingConnectedEnv(t *testing.T) {
+	database := newRuntimeWorkerTestDB(t)
+	ctx := context.Background()
+	homeRoot := t.TempDir()
+	template := seedWorkerTemplateFiles(t, homeRoot)
+	agentID := insertRuntimeWorkerAgent(t, database, homeRoot, agents.StatusCreating)
+	jobID := insertRuntimeWorkerJob(t, database, agentID, jobs.TypeProvisionAgent)
+	homePath := filepath.Join(homeRoot, "agents", agentID, "hermes-home")
+	if err := os.MkdirAll(homePath, 0o755); err != nil {
+		t.Fatalf("mkdir hermes home: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(homePath, ".env"), []byte("WEIXIN_TOKEN=connected-token\nWEIXIN_ALLOWED_USERS=user-1\n"), 0o644); err != nil {
+		t.Fatalf("seed connected env: %v", err)
+	}
+
+	worker := jobs.NewRuntimeWorker(jobs.RuntimeWorkerDependencies{
+		Database:       database,
+		RuntimeJobs:    jobs.NewRuntimeRepository(database),
+		HomeBuilder:    runtime.NewHomeBuilder(),
+		Runner:         &stubRunner{},
+		TemplateLoader: stubTemplateLoader{template: template},
+		Provider: runtime.ProviderConfig{
+			DefaultModel: "deepseek-v4-flash",
+			Provider:     "custom",
+			BaseURL:      "https://api.deepseek.com",
+			APIKey:       "secret-api-key",
+			APIMode:      "chat_completions",
+		},
+		HermesImage:  "nousresearch/hermes-agent:v2026.6.5",
+		HermesMemory: "500m",
+		HermesCPUs:   "0.5",
+	})
+
+	if err := worker.ProcessJob(ctx, jobID); err != nil {
+		t.Fatalf("ProcessJob returned error: %v", err)
+	}
+
+	mustReadContains(t, filepath.Join(homePath, ".env"), "WEIXIN_TOKEN=connected-token")
+	mustReadContains(t, filepath.Join(homePath, ".env"), "WEIXIN_ALLOWED_USERS=user-1")
+}
+
 func TestRuntimeWorkerProvisionAgentRecordsCopyTemplateFailureAndPreservesSessions(t *testing.T) {
 	database := newRuntimeWorkerTestDB(t)
 	ctx := context.Background()
@@ -220,6 +313,8 @@ func TestRuntimeWorkerProvisionAgentRecordsContainerStartFailed(t *testing.T) {
 
 type stubRunner struct {
 	ensureErr error
+	status    runtime.ContainerStatus
+	inspectErr error
 }
 
 func (s *stubRunner) EnsureRunning(_ context.Context, _ runtime.ContainerSpec) error {
@@ -235,7 +330,7 @@ func (s *stubRunner) Remove(_ context.Context, _ string) error {
 }
 
 func (s *stubRunner) Inspect(_ context.Context, _ string) (runtime.ContainerStatus, error) {
-	return runtime.ContainerStatus{}, nil
+	return s.status, s.inspectErr
 }
 
 type stubTemplateLoader struct {

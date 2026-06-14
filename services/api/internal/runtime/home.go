@@ -132,8 +132,12 @@ func (homeBuilder) Provision(ctx context.Context, spec HomeSpec) (HomeResult, er
 	if err := writeConfig(result.ConfigPath, spec.Provider); err != nil {
 		return HomeResult{}, NewProvisionError(ErrCodeConfigWriteFailed, "failed to write Hermes config", err)
 	}
-	if err := WriteAgentEnv(result.EnvPath); err != nil {
-		return HomeResult{}, NewProvisionError(ErrCodeConfigWriteFailed, "failed to write Hermes env", err)
+	if _, err := os.Stat(result.EnvPath); errors.Is(err, os.ErrNotExist) {
+		if err := WriteAgentEnv(result.EnvPath); err != nil {
+			return HomeResult{}, NewProvisionError(ErrCodeConfigWriteFailed, "failed to write Hermes env", err)
+		}
+	} else if err != nil {
+		return HomeResult{}, NewProvisionError(ErrCodeConfigWriteFailed, "failed to inspect Hermes env", err)
 	}
 
 	return result, nil

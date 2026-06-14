@@ -106,13 +106,28 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 		return err
 	}
 
-	if err := w.transitionAgent(ctx, agent.ID, agentStatusProvisioning, "", "", ""); err != nil {
-		return err
+	if agent.Status == agentStatusRunning {
+		containerName := agent.RuntimeID
+		if strings.TrimSpace(containerName) == "" {
+			containerName = runtime.DefaultContainerName(agent.ID)
+		}
+		status, err := w.runner.Inspect(ctx, containerName)
+		if err == nil && status.Running {
+			return w.markJobSucceeded(ctx, job.ID)
+		}
 	}
-	if err := w.recordEvent(ctx, agent.ID, "provisioning", agent.Status, agentStatusProvisioning, ""); err != nil {
-		return err
+
+	if agent.Status == agentStatusCreating || agent.Status == agentStatusError {
+		if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusProvisioning, "", "", ""); err != nil {
+			return err
+		}
+		if err := w.recordEvent(ctx, agent.ID, "provisioning", agent.Status, agentStatusProvisioning, ""); err != nil {
+			return err
+		}
+		agent.Status = agentStatusProvisioning
+	} else if agent.Status != agentStatusProvisioning && agent.Status != agentStatusStarting {
+		return ErrConflict
 	}
-	agent.Status = agentStatusProvisioning
 
 	template, err := w.loadTemplate(ctx, agent)
 	if err != nil {
@@ -140,13 +155,15 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 	}
 
 	runtimeID := runtime.DefaultContainerName(agent.ID)
-	if err := w.transitionAgent(ctx, agent.ID, agentStatusStarting, runtimeID, "", ""); err != nil {
-		return err
+	if agent.Status == agentStatusProvisioning {
+		if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusStarting, runtimeID, "", ""); err != nil {
+			return err
+		}
+		if err := w.recordEvent(ctx, agent.ID, "starting", agent.Status, agentStatusStarting, ""); err != nil {
+			return err
+		}
+		agent.Status = agentStatusStarting
 	}
-	if err := w.recordEvent(ctx, agent.ID, "starting", agent.Status, agentStatusStarting, ""); err != nil {
-		return err
-	}
-	agent.Status = agentStatusStarting
 	agent.RuntimeID = runtimeID
 
 	if err := w.runner.EnsureRunning(ctx, runtime.ContainerSpec{
@@ -160,7 +177,7 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 		return w.failProvision(ctx, job, agent, runtime.ErrCodeContainerStartFailed, "failed to start Hermes container")
 	}
 
-	if err := w.transitionAgent(ctx, agent.ID, agentStatusRunning, runtimeID, "", ""); err != nil {
+	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusRunning, runtimeID, "", ""); err != nil {
 		return err
 	}
 	if err := w.recordEvent(ctx, agent.ID, "running", agent.Status, agentStatusRunning, ""); err != nil {
@@ -173,7 +190,7 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 }
 
 func (w *RuntimeWorker) failProvision(ctx context.Context, job runtimeJobRecord, agent runtimeAgentRecord, code, message string) error {
-	if err := w.transitionAgent(ctx, agent.ID, agentStatusError, agent.RuntimeID, code, message); err != nil {
+	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusError, agent.RuntimeID, code, message); err != nil {
 		return err
 	}
 	if err := w.recordEvent(ctx, agent.ID, code, agent.Status, agentStatusError, message); err != nil {
@@ -233,7 +250,7 @@ func (w *RuntimeWorker) loadTemplate(ctx context.Context, agent runtimeAgentReco
 	}, nil
 }
 
-func (w *RuntimeWorker) transitionAgent(ctx context.Context, agentID, status, runtimeID, errorCode, errorMessage string) error {
+func (w *RuntimeWorker) transitionAgent(ctx context.Context, agentID, currentStatus, nextStatus, runtimeID, errorCode, errorMessage string) error {
 	result, err := w.database.ExecContext(ctx, `
 		UPDATE agents
 		SET status = ?,
@@ -241,8 +258,8 @@ func (w *RuntimeWorker) transitionAgent(ctx context.Context, agentID, status, ru
 		    last_error_code = ?,
 		    last_error_message = ?,
 		    updated_at = datetime('now')
-		WHERE id = ?;
-	`, status, runtimeID, errorCode, errorMessage, agentID)
+		WHERE id = ? AND status = ?;
+	`, nextStatus, runtimeID, errorCode, errorMessage, agentID, currentStatus)
 	if err != nil {
 		return err
 	}
@@ -251,7 +268,7 @@ func (w *RuntimeWorker) transitionAgent(ctx context.Context, agentID, status, ru
 		return err
 	}
 	if affected == 0 {
-		return ErrNotFound
+		return ErrConflict
 	}
 	return nil
 }

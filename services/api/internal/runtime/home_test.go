@@ -101,11 +101,16 @@ func TestProvisionHermesHomeCopiesTemplateAndPreservesSessions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(homePath, "sessions", "new.session"), []byte("new"), 0o644); err != nil {
 		t.Fatalf("write new session: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(homePath, ".env"), []byte("WEIXIN_TOKEN=connected-token\nWEIXIN_ALLOWED_USERS=user-1\n"), 0o644); err != nil {
+		t.Fatalf("seed connected env: %v", err)
+	}
 	if _, err := builder.Provision(ctx, spec); err != nil {
 		t.Fatalf("second Provision returned error: %v", err)
 	}
 	mustContainFile(t, filepath.Join(homePath, "sessions", "existing.session"), "keep me")
 	mustContainFile(t, filepath.Join(homePath, "sessions", "new.session"), "new")
+	mustContainFile(t, filepath.Join(homePath, ".env"), "WEIXIN_TOKEN=connected-token")
+	mustContainFile(t, filepath.Join(homePath, ".env"), "WEIXIN_ALLOWED_USERS=user-1")
 }
 
 func TestProvisionHermesHomeReturnsCopyTemplateFailed(t *testing.T) {

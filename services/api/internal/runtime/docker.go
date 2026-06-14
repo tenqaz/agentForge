@@ -50,12 +50,27 @@ func DefaultContainerName(agentID string) string {
 }
 
 func (r *dockerRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error {
-	containerName := spec.ContainerName
-	if strings.TrimSpace(containerName) == "" {
-		containerName = DefaultContainerName(spec.AgentID)
+	if strings.TrimSpace(spec.AgentID) == "" {
+		return errors.New("agent id is required")
 	}
+	containerName := DefaultContainerName(spec.AgentID)
 	homePath, err := filepath.Abs(spec.HermesHome)
 	if err != nil {
+		return err
+	}
+
+	status, err := r.Inspect(ctx, containerName)
+	if err == nil {
+		if status.Running {
+			return nil
+		}
+		output, startErr := exec.CommandContext(ctx, r.dockerBin, "start", containerName).CombinedOutput()
+		if startErr != nil {
+			return fmt.Errorf("docker start failed: %w: %s", startErr, strings.TrimSpace(string(output)))
+		}
+		return nil
+	}
+	if !errors.Is(err, ErrContainerNotFound) {
 		return err
 	}
 
@@ -98,7 +113,11 @@ func (r *dockerRunner) Remove(ctx context.Context, containerName string) error {
 func (r *dockerRunner) Inspect(ctx context.Context, containerName string) (ContainerStatus, error) {
 	output, err := exec.CommandContext(ctx, r.dockerBin, "inspect", "--format", "{{json .State}}", containerName).CombinedOutput()
 	if err != nil {
-		return ContainerStatus{}, ErrContainerNotFound
+		trimmed := strings.TrimSpace(string(output))
+		if strings.Contains(trimmed, "No such object") || strings.Contains(trimmed, "No such container") {
+			return ContainerStatus{}, ErrContainerNotFound
+		}
+		return ContainerStatus{}, fmt.Errorf("docker inspect failed: %w: %s", err, trimmed)
 	}
 	var state struct {
 		Running bool   `json:"Running"`
