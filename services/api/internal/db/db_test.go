@@ -32,6 +32,14 @@ func TestOpenAppliesSQLitePragmas(t *testing.T) {
 	if foreignKeys != 1 {
 		t.Fatalf("foreign_keys = %d, want 1", foreignKeys)
 	}
+
+	var busyTimeout int
+	if err := database.QueryRowContext(ctx, "PRAGMA busy_timeout;").Scan(&busyTimeout); err != nil {
+		t.Fatalf("query busy_timeout: %v", err)
+	}
+	if busyTimeout != 5000 {
+		t.Fatalf("busy_timeout = %d, want 5000", busyTimeout)
+	}
 }
 
 func TestMigrateIsIdempotentAndEnforcesForeignKeys(t *testing.T) {
