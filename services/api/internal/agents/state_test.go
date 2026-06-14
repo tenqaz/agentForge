@@ -22,20 +22,26 @@ func TestStatusCanTransition(t *testing.T) {
 		{StatusCreating, StatusProvisioning, true},
 		{StatusCreating, StatusError, true},
 		{StatusCreating, StatusRunning, false},
+		{StatusCreating, StatusCreating, false},
 		{StatusProvisioning, StatusStarting, true},
 		{StatusProvisioning, StatusError, true},
 		{StatusProvisioning, StatusStopped, false},
+		{StatusProvisioning, StatusProvisioning, false},
 		{StatusStarting, StatusRunning, true},
 		{StatusStarting, StatusError, true},
 		{StatusStarting, StatusProvisioning, false},
+		{StatusStarting, StatusStarting, false},
 		{StatusRunning, StatusStopped, true},
 		{StatusRunning, StatusError, true},
 		{StatusRunning, StatusCreating, false},
+		{StatusRunning, StatusRunning, false},
 		{StatusStopped, StatusStarting, true},
 		{StatusStopped, StatusRunning, false},
+		{StatusStopped, StatusStopped, false},
 		{StatusError, StatusProvisioning, true},
 		{StatusError, StatusStarting, true},
 		{StatusError, StatusRunning, false},
+		{StatusError, StatusError, false},
 	}
 
 	for _, tc := range cases {
@@ -122,6 +128,35 @@ func TestServiceCreateCreatesAgentAndProvisionJob(t *testing.T) {
 	}
 	if runtimeJobs[0].Type != jobs.TypeProvisionAgent || runtimeJobs[0].Status != jobs.StatusQueued {
 		t.Fatalf("runtime job = %#v", runtimeJobs[0])
+	}
+}
+
+func TestServiceCreateRejectsNonPublishedTemplates(t *testing.T) {
+	database := newAgentsTestDB(t)
+	repository := NewRepository(database)
+	jobRepository := jobs.NewRuntimeRepository(database)
+	service := NewService(database, repository, jobRepository)
+	ctx := context.Background()
+
+	for _, status := range []string{"draft", "archived"} {
+		if _, err := database.ExecContext(ctx, `
+			INSERT INTO agent_templates (
+				id, name, description, status, version, template_path, content_checksum,
+				soul_md_path, user_md_path, skills_path, created_by
+			) VALUES (?, 'Hidden template', '', ?, 1, '/tmp/hidden', 'checksum', '/tmp/hidden/SOUL.md',
+				'/tmp/hidden/USER.md', '/tmp/hidden/skills', 'admin-1');
+		`, "template-"+status, status); err != nil {
+			t.Fatalf("insert %s template: %v", status, err)
+		}
+
+		_, err := service.Create(ctx, CreateParams{
+			OwnerUserID: "user-1",
+			TemplateID:  "template-" + status,
+			Name:        "Support Agent",
+		})
+		if !errors.Is(err, ErrTemplateNotFound) {
+			t.Fatalf("Create with %s template error = %v, want ErrTemplateNotFound", status, err)
+		}
 	}
 }
 

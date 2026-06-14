@@ -55,7 +55,7 @@ func (r *Repository) TemplateVersion(ctx context.Context, db queryer, templateID
 	err := db.QueryRowContext(ctx, `
 		SELECT version
 		FROM agent_templates
-		WHERE id = ?;
+		WHERE id = ? AND status = 'published';
 	`, templateID).Scan(&version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrTemplateNotFound

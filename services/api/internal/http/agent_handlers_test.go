@@ -174,6 +174,30 @@ func TestCreateRuntimeJobReturnsConflictWhenAgentAlreadyHasActiveJob(t *testing.
 	}
 }
 
+func TestCreateAgentRejectsNonPublishedTemplate(t *testing.T) {
+	router, manager, database := newAgentTestRouter(t)
+	userCookie := sessionCookieFor(t, manager, auth.User{ID: "user-1", Email: "user@example.com", Role: auth.RoleUser})
+
+	for _, status := range []string{"draft", "archived"} {
+		templateID := "template-" + status
+		_, err := database.Exec(`
+			INSERT INTO agent_templates (
+				id, name, description, status, version, template_path, content_checksum,
+				soul_md_path, user_md_path, skills_path, created_by
+			) VALUES (?, 'Hidden template', '', ?, 1, '/tmp/hidden', 'checksum', '/tmp/hidden/SOUL.md',
+				'/tmp/hidden/USER.md', '/tmp/hidden/skills', 'admin-1');
+		`, templateID, status)
+		if err != nil {
+			t.Fatalf("insert %s template: %v", status, err)
+		}
+
+		recorder := doJSON(t, router, http.MethodPost, "/api/agents", `{"templateId":"`+templateID+`","name":"Support Agent"}`, userCookie)
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("create with %s template status = %d, want 404, body = %s", status, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func newAgentTestRouter(t *testing.T) (http.Handler, *auth.SessionManager, *sql.DB) {
 	t.Helper()
 

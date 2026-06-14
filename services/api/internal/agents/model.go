@@ -78,9 +78,6 @@ var transitions = map[Status]map[Status]struct{}{
 }
 
 func (s Status) CanTransitionTo(next Status) bool {
-	if s == next {
-		return true
-	}
 	nextStates, ok := transitions[s]
 	if !ok {
 		return false
