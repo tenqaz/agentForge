@@ -1,65 +1,72 @@
-import Image from "next/image";
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+import { useSessionState } from "@/components/app-shell";
 
 export default function Home() {
+  const router = useRouter();
+  const { loading, user } = useSessionState();
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+    if (user?.role === "admin") {
+      router.replace("/admin/templates");
+      return;
+    }
+    if (user) {
+      router.replace("/templates");
+    }
+  }, [loading, router, user]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <section className="grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
+      <div className="panel rounded-[2rem] p-8 sm:p-12">
+        <p className="eyebrow">Operator Console</p>
+        <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight text-stone-950 sm:text-6xl">
+          Launch agents, publish templates, and complete Weixin pairing without touching a terminal.
+        </h1>
+        <p className="mt-6 max-w-2xl text-lg leading-8 text-stone-600">
+          AgentForge keeps runtime state, template lifecycle, and channel activation in one surface.
+          Admins shape templates. Operators launch agents and drive them toward a connected channel.
+        </p>
+        <div className="mt-10 flex flex-wrap gap-3">
+          <Link
+            className="rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)]"
+            href="/login"
+          >
+            Sign In
+          </Link>
+          <Link
+            className="rounded-full border border-stone-900/15 px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-700 hover:border-stone-900 hover:bg-white/70"
+            href="/templates"
+          >
+            Browse Templates
+          </Link>
+        </div>
+      </div>
+      <div className="grid gap-6">
+        <div className="panel rounded-[2rem] p-8">
+          <p className="eyebrow">What Moves Here</p>
+          <ul className="mt-5 space-y-4 text-sm leading-7 text-stone-700">
+            <li>Published templates for regular operators.</li>
+            <li>Admin-only draft editing for SOUL, USER, and whole-skill add/delete.</li>
+            <li>Agent runtime progress from creating to running.</li>
+            <li>Weixin QR pairing with status refresh and connected-state confirmation.</li>
+          </ul>
+        </div>
+        <div className="rounded-[2rem] border border-[color:var(--border)] bg-stone-950 px-8 py-7 text-stone-50 shadow-[0_24px_80px_rgba(35,28,19,0.18)]">
+          <p className="eyebrow text-stone-300">Console Rules</p>
+          <p className="mt-5 text-sm leading-7 text-stone-200">
+            Secrets stay on the server. Weixin controls stay disabled until runtime is healthy.
+            Publication is explicit. Pairing status stays visible without leaking tokens.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </div>
+    </section>
   );
 }

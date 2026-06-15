@@ -19,6 +19,7 @@ const (
 	agentStatusProvisioning = "provisioning"
 	agentStatusStarting     = "starting"
 	agentStatusRunning      = "running"
+	agentStatusStopped      = "stopped"
 	agentStatusError        = "error"
 )
 
@@ -97,10 +98,17 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 	if err != nil {
 		return err
 	}
-	if job.Type != TypeProvisionAgent {
+	switch job.Type {
+	case TypeProvisionAgent:
+		return w.processProvisionAgent(ctx, job)
+	case TypeRestartRuntime:
+		return w.processRestartRuntime(ctx, job)
+	default:
 		return ErrInvalidInput
 	}
+}
 
+func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJobRecord) error {
 	agent, err := w.loadAgent(ctx, job.AgentID)
 	if err != nil {
 		return err
@@ -187,6 +195,42 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 		return err
 	}
 	return nil
+}
+
+func (w *RuntimeWorker) processRestartRuntime(ctx context.Context, job runtimeJobRecord) error {
+	agent, err := w.loadAgent(ctx, job.AgentID)
+	if err != nil {
+		return err
+	}
+	if agent.Status != agentStatusRunning && agent.Status != agentStatusStarting && agent.Status != agentStatusStopped && agent.Status != agentStatusError {
+		return ErrConflict
+	}
+	containerName := agent.RuntimeID
+	if strings.TrimSpace(containerName) == "" {
+		containerName = runtime.DefaultContainerName(agent.ID)
+	}
+	if err := w.runner.Stop(ctx, containerName); err != nil && !errors.Is(err, runtime.ErrContainerNotFound) {
+		return w.markJobFailed(ctx, job.ID, runtime.ErrCodeContainerStartFailed, "failed to restart Hermes container")
+	}
+	if err := w.runner.EnsureRunning(ctx, runtime.ContainerSpec{
+		AgentID:       agent.ID,
+		ContainerName: containerName,
+		HermesHome:    agent.HermesHomePath,
+		Image:         w.hermesImage,
+		Memory:        w.hermesMemory,
+		CPUs:          w.hermesCPUs,
+	}); err != nil {
+		return w.markJobFailed(ctx, job.ID, runtime.ErrCodeContainerStartFailed, "failed to restart Hermes container")
+	}
+	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusRunning, containerName, "", ""); err != nil {
+		if !errors.Is(err, ErrConflict) {
+			return err
+		}
+	}
+	if err := w.recordEvent(ctx, agent.ID, "running", agent.Status, agentStatusRunning, ""); err != nil {
+		return err
+	}
+	return w.markJobSucceeded(ctx, job.ID)
 }
 
 func (w *RuntimeWorker) failProvision(ctx context.Context, job runtimeJobRecord, agent runtimeAgentRecord, code, message string) error {

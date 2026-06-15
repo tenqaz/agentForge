@@ -68,6 +68,17 @@ func (s *Service) Get(ctx context.Context, id string) (Template, error) {
 	return s.repository.GetTemplate(ctx, id)
 }
 
+func (s *Service) LoadPublishedTemplate(ctx context.Context, templateID string, version int) (Template, error) {
+	template, err := s.repository.GetTemplate(ctx, templateID)
+	if err != nil {
+		return Template{}, err
+	}
+	if template.Status != StatusPublished || template.Version != version {
+		return Template{}, ErrNotFound
+	}
+	return template, nil
+}
+
 func (s *Service) UpdateMetadata(ctx context.Context, id, name, description string) (Template, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {

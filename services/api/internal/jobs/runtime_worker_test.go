@@ -311,18 +311,64 @@ func TestRuntimeWorkerProvisionAgentRecordsContainerStartFailed(t *testing.T) {
 	}
 }
 
+func TestRuntimeWorkerRestartRuntimeRestartsRunningAgent(t *testing.T) {
+	database := newRuntimeWorkerTestDB(t)
+	ctx := context.Background()
+	homeRoot := t.TempDir()
+	agentID := insertRuntimeWorkerAgent(t, database, homeRoot, agents.StatusRunning)
+	if _, err := database.ExecContext(ctx, `
+		UPDATE agents
+		SET runtime_id = ?
+		WHERE id = ?;
+	`, runtime.DefaultContainerName(agentID), agentID); err != nil {
+		t.Fatalf("seed runtime id: %v", err)
+	}
+	jobID := insertRuntimeWorkerJob(t, database, agentID, jobs.TypeRestartRuntime)
+	runner := &stubRunner{}
+
+	worker := jobs.NewRuntimeWorker(jobs.RuntimeWorkerDependencies{
+		Database:    database,
+		RuntimeJobs: jobs.NewRuntimeRepository(database),
+		HomeBuilder: runtime.NewHomeBuilder(),
+		Runner:      runner,
+		HermesImage: "nousresearch/hermes-agent:v2026.6.5",
+		HermesMemory: "500m",
+		HermesCPUs:  "0.5",
+	})
+
+	if err := worker.ProcessJob(ctx, jobID); err != nil {
+		t.Fatalf("ProcessJob returned error: %v", err)
+	}
+
+	job, err := jobs.NewRuntimeRepository(database).GetByID(ctx, agentID, jobID)
+	if err != nil {
+		t.Fatalf("Get job: %v", err)
+	}
+	if job.Status != jobs.StatusSucceeded {
+		t.Fatalf("job status = %s, want %s", job.Status, jobs.StatusSucceeded)
+	}
+	if runner.stopCount != 1 || runner.ensureCount != 1 {
+		t.Fatalf("runner stop/ensure counts = %d/%d, want 1/1", runner.stopCount, runner.ensureCount)
+	}
+}
+
 type stubRunner struct {
 	ensureErr error
 	status    runtime.ContainerStatus
 	inspectErr error
+	stopErr   error
+	stopCount int
+	ensureCount int
 }
 
 func (s *stubRunner) EnsureRunning(_ context.Context, _ runtime.ContainerSpec) error {
+	s.ensureCount++
 	return s.ensureErr
 }
 
 func (s *stubRunner) Stop(_ context.Context, _ string) error {
-	return nil
+	s.stopCount++
+	return s.stopErr
 }
 
 func (s *stubRunner) Remove(_ context.Context, _ string) error {

@@ -160,6 +160,48 @@ func (r *RuntimeRepository) ClaimNextQueued(ctx context.Context, workerID string
 	return job, nil
 }
 
+func (r *RuntimeRepository) ExtendLease(ctx context.Context, agentID, jobID, workerID string, lockedUntil time.Time) error {
+	result, err := r.database.ExecContext(ctx, `
+		UPDATE runtime_jobs
+		SET locked_until = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE agent_id = ? AND id = ? AND status = 'running' AND locked_by = ?;
+	`, lockedUntil.UTC().Format("2006-01-02 15:04:05"), agentID, jobID, workerID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *RuntimeRepository) MarkFailed(ctx context.Context, agentID, jobID, code, message string) error {
+	result, err := r.database.ExecContext(ctx, `
+		UPDATE runtime_jobs
+		SET status = 'failed',
+		    last_error_code = ?,
+		    last_error_message = ?,
+		    finished_at = CURRENT_TIMESTAMP,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE agent_id = ? AND id = ?;
+	`, code, message, agentID, jobID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *RuntimeRepository) createQueued(ctx context.Context, db queryer, job RuntimeJob) (RuntimeJob, error) {
 	if strings.TrimSpace(job.AgentID) == "" || !isValidType(job.Type) {
 		return RuntimeJob{}, ErrInvalidInput
