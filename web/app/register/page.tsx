@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useState,
@@ -9,15 +9,14 @@ import {
   type FormEvent,
 } from "react";
 
+import { registerWithPassword } from "@/app/register/actions";
 import { useApiClient, useSessionState } from "@/components/app-shell";
-import { signInWithPassword } from "@/app/login/actions";
 import { apiErrorMessage } from "@/lib/api";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const apiClient = useApiClient();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { loading, refreshSession, user } = useSessionState();
+  const { loading, user } = useSessionState();
   const hydrated = useSyncExternalStore(
     () => () => undefined,
     () => true,
@@ -27,7 +26,6 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const registered = searchParams.get("registered") === "1";
 
   useEffect(() => {
     if (loading) {
@@ -47,7 +45,7 @@ export default function LoginPage() {
     setPending(true);
     setError("");
 
-    const response = await signInWithPassword(
+    const response = await registerWithPassword(
       apiClient,
       email.trim(),
       password,
@@ -58,33 +56,22 @@ export default function LoginPage() {
       return;
     }
 
-    const signedInUser = await refreshSession();
     setPending(false);
-    if (signedInUser?.role === "admin") {
-      router.push("/admin/templates");
-      router.refresh();
-      return;
-    }
-    router.push("/templates");
+    router.push("/login?registered=1");
     router.refresh();
   }
 
   return (
     <section className="mx-auto max-w-2xl">
       <div className="panel rounded-[2rem] p-8 sm:p-10">
-        <p className="eyebrow">Session</p>
+        <p className="eyebrow">Account</p>
         <h1 className="mt-5 text-4xl font-semibold tracking-tight text-stone-950">
-          Sign in to the console.
+          Create your console account.
         </h1>
         <p className="mt-3 max-w-xl text-base leading-7 text-stone-600">
-          Use the same account that owns your agents or the admin account that manages
-          template publication.
+          Register with an email and password, then sign in to manage your
+          agents and templates.
         </p>
-        {registered ? (
-          <div className="mt-6 rounded-[1.25rem] border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            Account created. Sign in with your new email and password.
-          </div>
-        ) : null}
         <form className="mt-8 grid gap-5" onSubmit={(event) => void handleSubmit(event)}>
           <label className="grid gap-2 text-sm font-medium text-stone-700">
             Email
@@ -93,9 +80,9 @@ export default function LoginPage() {
               name="email"
               onChange={(event) => setEmail(event.target.value)}
               placeholder="user@example.com"
+              required
               type="email"
               value={email}
-              required
             />
           </label>
           <label className="grid gap-2 text-sm font-medium text-stone-700">
@@ -104,10 +91,10 @@ export default function LoginPage() {
               className="rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
               name="password"
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="••••••••"
+              placeholder="At least 8 characters with letters and numbers"
+              required
               type="password"
               value={password}
-              required
             />
           </label>
           {error ? (
@@ -120,13 +107,13 @@ export default function LoginPage() {
             disabled={!hydrated || pending}
             type="submit"
           >
-            {pending ? "Signing In..." : "Sign In"}
+            {pending ? "Creating Account..." : "Create Account"}
           </button>
         </form>
         <p className="mt-6 text-sm text-stone-600">
-          Need an account?{" "}
-          <Link className="font-semibold text-stone-950 underline decoration-stone-300 underline-offset-4" href="/register">
-            Create one here
+          Already have an account?{" "}
+          <Link className="font-semibold text-stone-950 underline decoration-stone-300 underline-offset-4" href="/login">
+            Back to sign in
           </Link>
         </p>
       </div>
