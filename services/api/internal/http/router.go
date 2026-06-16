@@ -12,6 +12,7 @@ import (
 )
 
 type AuthRepository interface {
+	CreateUser(ctx context.Context, params auth.CreateUserParams) (auth.User, error)
 	FindUserByEmail(ctx context.Context, email string) (auth.User, error)
 	FindUserByID(ctx context.Context, userID string) (auth.User, error)
 	PasswordHashForUser(ctx context.Context, userID string) (string, error)
@@ -31,6 +32,8 @@ type Dependencies struct {
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	NewHealthHandlers().Register(mux)
+	registrationHandlers := NewRegistrationHandlers(deps.AuthRepository)
+	mux.HandleFunc("POST /api/users", registrationHandlers.Create)
 	sessionHandlers := NewSessionHandlers(deps.AuthRepository, deps.SessionManager)
 	mux.HandleFunc("POST /api/sessions", sessionHandlers.Create)
 	mux.HandleFunc("GET /api/session", sessionHandlers.Current)
