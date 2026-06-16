@@ -193,6 +193,16 @@ export async function getSession(client: ApiClient) {
   return client.get<UserResponse>("/api/session");
 }
 
+export async function registerUser(
+  client: ApiClient,
+  payload: { email: string; password: string },
+) {
+  return client.post<UserResponse, { email: string; password: string }>(
+    "/api/users",
+    payload,
+  );
+}
+
 export async function listPublishedTemplates(client: ApiClient) {
   return client.get<TemplatesResponse>("/api/templates");
 }
@@ -387,8 +397,16 @@ export function apiErrorMessage(
       return "This action conflicts with the current resource state.";
     case "invalid_request":
       return "The submitted data is invalid.";
+    case "invalid_email":
+      return "Enter a valid email address.";
+    case "invalid_password":
+      return "Password must be at least 8 characters and include a letter and a number.";
     case "invalid_template":
       return "The template is incomplete and cannot be published yet.";
+    case "email_already_exists":
+      return "An account with this email already exists.";
+    case "email_conflict":
+      return "This email cannot be used right now. Please contact support.";
     case "not_found":
       return "The requested resource could not be found.";
     case "internal_error":

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,6 +87,249 @@ func TestRepositoryFindsUsersByEmailWithoutPasswordHash(t *testing.T) {
 	_, err = repo.FindUserByID(context.Background(), "missing-user")
 	if !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("FindUserByID missing user error = %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestCreateUser_NormalizesEmailAndHashesPassword(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	user, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "  USER@Example.com ",
+		Password: "abc12345",
+		Role:     RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser returned error: %v", err)
+	}
+	if user.Email != "user@example.com" || user.Role != RoleUser {
+		t.Fatalf("unexpected user: %#v", user)
+	}
+	if user.PasswordHash != "" {
+		t.Fatalf("CreateUser exposed password hash: %#v", user)
+	}
+
+	hash, err := repo.PasswordHashForUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("PasswordHashForUser returned error: %v", err)
+	}
+	if !CheckPassword(hash, "abc12345") {
+		t.Fatal("stored password hash does not verify")
+	}
+}
+
+func TestCreateUser_RejectsInvalidEmailWeakPasswordAndDuplicateEmail(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	if _, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "bad-email",
+		Password: "abc12345",
+		Role:     RoleUser,
+	}); !errors.Is(err, ErrInvalidEmail) {
+		t.Fatalf("invalid email error = %v, want ErrInvalidEmail", err)
+	}
+
+	if _, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "password",
+		Role:     RoleUser,
+	}); !errors.Is(err, ErrInvalidPassword) {
+		t.Fatalf("weak password error = %v, want ErrInvalidPassword", err)
+	}
+
+	_, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "abc12345",
+		Role:     RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("first CreateUser returned error: %v", err)
+	}
+
+	_, err = repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "USER@example.com",
+		Password: "xyz12345",
+		Role:     RoleUser,
+	})
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("duplicate email error = %v, want ErrEmailAlreadyExists", err)
+	}
+}
+
+func TestCreateUser_RejectsLegacyNormalizedEmailCollision(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('legacy-user', ' USER@Example.com ', ?, 'user');
+	`, hash)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	repo := NewRepository(database)
+	_, err = repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "xyz12345",
+		Role:     RoleUser,
+	})
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("CreateUser error = %v, want ErrEmailAlreadyExists", err)
+	}
+}
+
+func TestFindUserByEmail_NormalizesLookupAfterCreateUser(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	created, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "abc12345",
+		Role:     RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser returned error: %v", err)
+	}
+
+	user, err := repo.FindUserByEmail(context.Background(), "  USER@example.com ")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != created.ID || user.Email != "user@example.com" || user.Role != RoleUser {
+		t.Fatalf("unexpected user: %#v", user)
+	}
+	if user.PasswordHash != "" {
+		t.Fatalf("FindUserByEmail exposed password hash: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_NormalizesLookupForExistingNormalizedRecord(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('user-2', 'user@example.com', ?, 'user');
+	`, hash)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), " USER@EXAMPLE.COM ")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "user-2" || user.Email != "user@example.com" || user.Role != RoleUser {
+		t.Fatalf("unexpected user: %#v", user)
+	}
+	if user.PasswordHash != "" {
+		t.Fatalf("FindUserByEmail exposed password hash: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_PrefersExactLegacyMatchWhenNormalizedDuplicateExists(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES
+			('legacy-user', ' USER@Example.com ', ?, 'user'),
+			('normalized-user', 'user@example.com', ?, 'user');
+	`, hash, hash)
+	if err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), " USER@Example.com ")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "legacy-user" || user.Email != " USER@Example.com " {
+		t.Fatalf("unexpected exact-match user: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_FallsBackToNormalizedMatchDeterministically(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES
+			('legacy-user', ' USER@Example.com ', ?, 'user'),
+			('normalized-user', 'user@example.com', ?, 'user');
+	`, hash, hash)
+	if err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), "USER@example.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "normalized-user" || user.Email != "user@example.com" {
+		t.Fatalf("unexpected normalized-match user: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_FindsLegacyOnlyStoredEmailViaNormalizedInput(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('legacy-user', ' USER@Example.com ', ?, 'user');
+	`, hash)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), "user@example.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "legacy-user" || user.Email != " USER@Example.com " || user.Role != RoleUser {
+		t.Fatalf("unexpected legacy-match user: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_RejectsAmbiguousLegacyNormalizedDuplicates(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES
+			('legacy-user-1', ' USER@Example.com ', ?, 'user'),
+			('legacy-user-2', 'user@example.com  ', ?, 'user');
+	`, hash, hash)
+	if err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	repo := NewRepository(database)
+	_, err = repo.FindUserByEmail(context.Background(), "user@example.com")
+	if !errors.Is(err, ErrEmailLookupAmbiguous) {
+		t.Fatalf("FindUserByEmail error = %v, want ErrEmailLookupAmbiguous", err)
 	}
 }
 
@@ -208,11 +452,11 @@ func TestEnsureDefaultAdmin_FirstTime(t *testing.T) {
 		t.Fatalf("EnsureDefaultAdmin returned error: %v", err)
 	}
 
-	user, err := repo.FindUserByEmail(context.Background(), "admin")
+	user, err := repo.FindUserByEmail(context.Background(), "admin@123.com")
 	if err != nil {
 		t.Fatalf("FindUserByEmail returned error: %v", err)
 	}
-	if user.ID != "admin" || user.Email != "admin" || user.Role != RoleAdmin {
+	if user.ID != "admin" || user.Email != "admin@123.com" || user.Role != RoleAdmin {
 		t.Fatalf("unexpected user: %#v", user)
 	}
 
@@ -237,7 +481,7 @@ func TestEnsureDefaultAdmin_Idempotent(t *testing.T) {
 	}
 
 	var count int
-	err := database.QueryRow(`SELECT COUNT(*) FROM users WHERE email = 'admin'`).Scan(&count)
+	err := database.QueryRow(`SELECT COUNT(*) FROM users WHERE email = 'admin@123.com'`).Scan(&count)
 	if err != nil {
 		t.Fatalf("count query failed: %v", err)
 	}
@@ -256,7 +500,7 @@ func TestEnsureDefaultAdmin_AlreadyExists(t *testing.T) {
 	}
 	_, err = database.Exec(`
 		INSERT INTO users (id, email, password_hash, role)
-		VALUES ('custom-admin', 'admin', ?, 'admin');
+		VALUES ('custom-admin', 'admin@123.com', ?, 'admin');
 	`, customHash)
 	if err != nil {
 		t.Fatalf("insert custom admin: %v", err)
@@ -272,6 +516,57 @@ func TestEnsureDefaultAdmin_AlreadyExists(t *testing.T) {
 	}
 	if !CheckPassword(hash, "custom-password") {
 		t.Fatal("existing admin password was modified")
+	}
+}
+
+func TestEnsureDefaultAdmin_UpgradesLegacySeededAdmin(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	legacyHash, err := HashPassword("admin")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('admin', 'admin', ?, 'admin');
+	`, legacyHash)
+	if err != nil {
+		t.Fatalf("insert legacy admin: %v", err)
+	}
+
+	if err := repo.EnsureDefaultAdmin(context.Background()); err != nil {
+		t.Fatalf("EnsureDefaultAdmin returned error: %v", err)
+	}
+
+	var count int
+	err = database.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
+	if err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("got %d users, want 1", count)
+	}
+
+	user, err := repo.FindUserByEmail(context.Background(), "admin@123.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "admin" || user.Email != "admin@123.com" || user.Role != RoleAdmin {
+		t.Fatalf("unexpected upgraded admin after ensure: %#v", user)
+	}
+
+	hash, err := repo.PasswordHashForUser(context.Background(), "admin")
+	if err != nil {
+		t.Fatalf("PasswordHashForUser returned error: %v", err)
+	}
+	if !CheckPassword(hash, "admin") {
+		t.Fatal("legacy admin password does not verify after upgrade")
+	}
+
+	_, err = repo.FindUserByEmail(context.Background(), "admin")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("FindUserByEmail(admin) error = %v, want ErrUserNotFound", err)
 	}
 }
 
@@ -309,7 +604,7 @@ func TestRBACRules(t *testing.T) {
 
 func newAuthTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := sql.Open("sqlite", "file:auth-test?mode=memory&cache=shared")
+	database, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "-")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

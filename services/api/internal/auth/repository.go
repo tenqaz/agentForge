@@ -5,7 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 type Role string
@@ -16,6 +21,16 @@ const (
 )
 
 var ErrUserNotFound = errors.New("user not found")
+var ErrInvalidEmail = errors.New("invalid email")
+var ErrInvalidPassword = errors.New("invalid password")
+var ErrEmailAlreadyExists = errors.New("email already exists")
+var ErrEmailLookupAmbiguous = errors.New("email lookup ambiguous")
+
+type CreateUserParams struct {
+	Email    string
+	Password string
+	Role     Role
+}
 
 type User struct {
 	ID           string `json:"id"`
@@ -32,6 +47,51 @@ func NewRepository(database *sql.DB) *Repository {
 	return &Repository{database: database}
 }
 
+func (r *Repository) CreateUser(ctx context.Context, params CreateUserParams) (User, error) {
+	email, err := normalizeEmail(params.Email)
+	if err != nil {
+		return User{}, err
+	}
+	if err := validatePassword(params.Password); err != nil {
+		return User{}, err
+	}
+	exists, err := r.emailExists(ctx, email)
+	if err != nil {
+		return User{}, err
+	}
+	if exists {
+		return User{}, ErrEmailAlreadyExists
+	}
+
+	role := params.Role
+	if role == "" {
+		role = RoleUser
+	}
+
+	hash, err := HashPassword(params.Password)
+	if err != nil {
+		return User{}, fmt.Errorf("hash password: %w", err)
+	}
+
+	user := User{
+		ID:    uuid.NewString(),
+		Email: email,
+		Role:  role,
+	}
+
+	_, err = r.database.ExecContext(ctx, `
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES (?, ?, ?, ?);
+	`, user.ID, user.Email, hash, user.Role)
+	if isUniqueConstraint(err) {
+		return User{}, ErrEmailAlreadyExists
+	}
+	if err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
 func (r *Repository) FindUserByEmail(ctx context.Context, email string) (User, error) {
 	var user User
 	err := r.database.QueryRowContext(ctx, `
@@ -39,13 +99,54 @@ func (r *Repository) FindUserByEmail(ctx context.Context, email string) (User, e
 		FROM users
 		WHERE email = ?;
 	`, email).Scan(&user.ID, &user.Email, &user.Role)
-	if errors.Is(err, sql.ErrNoRows) {
-		return User{}, ErrUserNotFound
+	if err == nil {
+		return user, nil
 	}
+
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	if normalizedEmail != email {
+		err = r.database.QueryRowContext(ctx, `
+			SELECT id, email, role
+			FROM users
+			WHERE email = ?;
+		`, normalizedEmail).Scan(&user.ID, &user.Email, &user.Role)
+		if err == nil {
+			return user, nil
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return User{}, err
+		}
+	}
+
+	rows, err := r.database.QueryContext(ctx, `
+		SELECT id, email, role
+		FROM users
+		WHERE lower(trim(email)) = ?
+		ORDER BY id ASC;
+	`, normalizedEmail)
 	if err != nil {
 		return User{}, err
 	}
-	return user, nil
+	defer rows.Close()
+
+	var matches []User
+	for rows.Next() {
+		var match User
+		if err := rows.Scan(&match.ID, &match.Email, &match.Role); err != nil {
+			return User{}, err
+		}
+		matches = append(matches, match)
+		if len(matches) > 1 {
+			return User{}, ErrEmailLookupAmbiguous
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return User{}, err
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return User{}, ErrUserNotFound
 }
 
 func (r *Repository) FindUserByID(ctx context.Context, userID string) (User, error) {
@@ -81,8 +182,27 @@ func (r *Repository) PasswordHashForUser(ctx context.Context, userID string) (st
 }
 
 func (r *Repository) EnsureDefaultAdmin(ctx context.Context) error {
-	_, err := r.FindUserByEmail(ctx, "admin")
+	_, err := r.FindUserByEmail(ctx, "admin@123.com")
 	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrUserNotFound) {
+		return err
+	}
+
+	legacyAdmin, err := r.FindUserByEmail(ctx, "admin")
+	if err == nil {
+		if legacyAdmin.ID == "admin" && legacyAdmin.Role == RoleAdmin {
+			_, err = r.database.ExecContext(ctx, `
+				UPDATE users
+				SET email = ?
+				WHERE id = ? AND email = ? AND role = ?;
+			`, "admin@123.com", "admin", "admin", RoleAdmin)
+			if isUniqueConstraint(err) {
+				return nil
+			}
+			return err
+		}
 		return nil
 	}
 	if !errors.Is(err, ErrUserNotFound) {
@@ -97,7 +217,7 @@ func (r *Repository) EnsureDefaultAdmin(ctx context.Context) error {
 	_, err = r.database.ExecContext(ctx, `
 		INSERT INTO users (id, email, password_hash, role)
 		VALUES (?, ?, ?, ?);
-	`, "admin", "admin", hash, RoleAdmin)
+	`, "admin", "admin@123.com", hash, RoleAdmin)
 
 	if isUniqueConstraint(err) {
 		return nil
@@ -110,4 +230,54 @@ func isUniqueConstraint(err error) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "unique")
+}
+
+func normalizeEmail(email string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" {
+		return "", ErrInvalidEmail
+	}
+	parsed, err := mail.ParseAddress(normalized)
+	if err != nil || parsed.Address != normalized {
+		return "", ErrInvalidEmail
+	}
+	return normalized, nil
+}
+
+func validatePassword(password string) error {
+	if utf8.RuneCountInString(password) < 8 {
+		return ErrInvalidPassword
+	}
+
+	var hasLetter bool
+	var hasDigit bool
+	for _, r := range password {
+		if unicode.IsLetter(r) {
+			hasLetter = true
+		}
+		if unicode.IsDigit(r) {
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return ErrInvalidPassword
+	}
+	return nil
+}
+
+func (r *Repository) emailExists(ctx context.Context, normalizedEmail string) (bool, error) {
+	var existingID string
+	err := r.database.QueryRowContext(ctx, `
+		SELECT id
+		FROM users
+		WHERE lower(trim(email)) = ?
+		LIMIT 1;
+	`, normalizedEmail).Scan(&existingID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
