@@ -209,6 +209,58 @@ func TestFindUserByEmail_NormalizesLookupForExistingNormalizedRecord(t *testing.
 	}
 }
 
+func TestFindUserByEmail_PrefersExactLegacyMatchWhenNormalizedDuplicateExists(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES
+			('legacy-user', ' USER@Example.com ', ?, 'user'),
+			('normalized-user', 'user@example.com', ?, 'user');
+	`, hash, hash)
+	if err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), " USER@Example.com ")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "legacy-user" || user.Email != " USER@Example.com " {
+		t.Fatalf("unexpected exact-match user: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_FallsBackToNormalizedMatchDeterministically(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES
+			('legacy-user', ' USER@Example.com ', ?, 'user'),
+			('normalized-user', 'user@example.com', ?, 'user');
+	`, hash, hash)
+	if err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), "USER@example.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "normalized-user" || user.Email != "user@example.com" {
+		t.Fatalf("unexpected normalized-match user: %#v", user)
+	}
+}
+
 func TestSessionManagerCreatesParsesAndClearsSignedCookie(t *testing.T) {
 	manager := NewSessionManager("test-secret", true)
 	user := User{ID: "user-1", Email: "user@example.com", Role: RoleUser}

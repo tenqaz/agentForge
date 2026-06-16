@@ -86,13 +86,28 @@ func (r *Repository) CreateUser(ctx context.Context, params CreateUserParams) (U
 
 func (r *Repository) FindUserByEmail(ctx context.Context, email string) (User, error) {
 	var user User
-	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
 	err := r.database.QueryRowContext(ctx, `
 		SELECT id, email, role
 		FROM users
-		WHERE email = ? OR lower(trim(email)) = ?
-		LIMIT 1;
-	`, email, normalizedEmail).Scan(&user.ID, &user.Email, &user.Role)
+		WHERE email = ?;
+	`, email).Scan(&user.ID, &user.Email, &user.Role)
+	if err == nil {
+		return user, nil
+	}
+
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	if normalizedEmail == email {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, err
+	}
+
+	err = r.database.QueryRowContext(ctx, `
+		SELECT id, email, role
+		FROM users
+		WHERE email = ?;
+	`, normalizedEmail).Scan(&user.ID, &user.Email, &user.Role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}
