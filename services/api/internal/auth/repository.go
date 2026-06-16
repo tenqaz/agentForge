@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 type Role string
@@ -76,4 +78,36 @@ func (r *Repository) PasswordHashForUser(ctx context.Context, userID string) (st
 		return "", err
 	}
 	return hash, nil
+}
+
+func (r *Repository) EnsureDefaultAdmin(ctx context.Context) error {
+	_, err := r.FindUserByEmail(ctx, "admin")
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrUserNotFound) {
+		return err
+	}
+
+	hash, err := HashPassword("admin")
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	_, err = r.database.ExecContext(ctx, `
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES (?, ?, ?, ?);
+	`, "admin", "admin", hash, RoleAdmin)
+
+	if isUniqueConstraint(err) {
+		return nil
+	}
+	return err
+}
+
+func isUniqueConstraint(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unique")
 }

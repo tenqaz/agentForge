@@ -58,6 +58,9 @@ func run() error {
 	}
 
 	authRepo := auth.NewRepository(database)
+	if err := authRepo.EnsureDefaultAdmin(ctx); err != nil {
+		return fmt.Errorf("ensure default admin: %w", err)
+	}
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, false)
 	templateRepo := templates.NewRepository(database)
 	templateStore := templates.NewFileStore(cfg.DataDir)

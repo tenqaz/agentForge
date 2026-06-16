@@ -200,6 +200,81 @@ func TestSessionManagerRejectsExpiredTokens(t *testing.T) {
 	}
 }
 
+func TestEnsureDefaultAdmin_FirstTime(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	if err := repo.EnsureDefaultAdmin(context.Background()); err != nil {
+		t.Fatalf("EnsureDefaultAdmin returned error: %v", err)
+	}
+
+	user, err := repo.FindUserByEmail(context.Background(), "admin")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "admin" || user.Email != "admin" || user.Role != RoleAdmin {
+		t.Fatalf("unexpected user: %#v", user)
+	}
+
+	hash, err := repo.PasswordHashForUser(context.Background(), "admin")
+	if err != nil {
+		t.Fatalf("PasswordHashForUser returned error: %v", err)
+	}
+	if !CheckPassword(hash, "admin") {
+		t.Fatal("default admin password does not verify")
+	}
+}
+
+func TestEnsureDefaultAdmin_Idempotent(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	if err := repo.EnsureDefaultAdmin(context.Background()); err != nil {
+		t.Fatalf("first EnsureDefaultAdmin returned error: %v", err)
+	}
+	if err := repo.EnsureDefaultAdmin(context.Background()); err != nil {
+		t.Fatalf("second EnsureDefaultAdmin returned error: %v", err)
+	}
+
+	var count int
+	err := database.QueryRow(`SELECT COUNT(*) FROM users WHERE email = 'admin'`).Scan(&count)
+	if err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("got %d admin users, want 1", count)
+	}
+}
+
+func TestEnsureDefaultAdmin_AlreadyExists(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	customHash, err := HashPassword("custom-password")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('custom-admin', 'admin', ?, 'admin');
+	`, customHash)
+	if err != nil {
+		t.Fatalf("insert custom admin: %v", err)
+	}
+
+	if err := repo.EnsureDefaultAdmin(context.Background()); err != nil {
+		t.Fatalf("EnsureDefaultAdmin returned error: %v", err)
+	}
+
+	hash, err := repo.PasswordHashForUser(context.Background(), "custom-admin")
+	if err != nil {
+		t.Fatalf("PasswordHashForUser returned error: %v", err)
+	}
+	if !CheckPassword(hash, "custom-password") {
+		t.Fatal("existing admin password was modified")
+	}
+}
+
 func TestRBACRules(t *testing.T) {
 	admin := User{ID: "admin-1", Role: RoleAdmin}
 	user := User{ID: "user-1", Role: RoleUser}
