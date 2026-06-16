@@ -112,7 +112,7 @@ export function createApiClient(config: ApiClientConfig = {}) {
   ): Promise<ApiResponse<TResponse>> {
     const url = `${baseUrl}${path}${toQueryString(options.params) ?? ""}`;
     const method: ApiMethod = options.method ?? "GET";
-    const headers = mergeHeaders(defaultHeaders, options.headers ?? {});
+    const headers = mergeHeaders(defaultHeaders, options.headers);
     const init: RequestInit = {
       method,
       headers,
