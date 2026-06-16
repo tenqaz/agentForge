@@ -27,8 +27,7 @@ export default function TemplateSkillList({
   const router = useRouter();
   const [template, setTemplate] = useState(initialTemplate);
   const [skills, setSkills] = useState(initialSkills);
-  const [skillName, setSkillName] = useState("");
-  const [skillMD, setSkillMD] = useState("");
+  const [skillFile, setSkillFile] = useState<File | null>(null);
   const [pendingSkillId, setPendingSkillId] = useState("");
   const [error, setError] = useState("");
 
@@ -43,12 +42,11 @@ export default function TemplateSkillList({
   async function handleAddSkill() {
     setPendingSkillId("create");
     setError("");
-    const response = await addTemplateSkill(
-      apiClient,
-      template.id,
-      skillName,
-      skillMD,
-    );
+    if (!skillFile) {
+      setPendingSkillId("");
+      return;
+    }
+    const response = await addTemplateSkill(apiClient, template.id, skillFile);
     setPendingSkillId("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
@@ -57,8 +55,7 @@ export default function TemplateSkillList({
     const nextSkills = [...skills, response.data.skill];
     setSkills(nextSkills);
     onSkillsChange(nextSkills);
-    setSkillName("");
-    setSkillMD("");
+    setSkillFile(null);
     if (response.data.skill.templateId !== template.id) {
       moveTemplate({ ...template, id: response.data.skill.templateId });
     }
@@ -86,12 +83,9 @@ export default function TemplateSkillList({
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="eyebrow">Skills</p>
-          <h2 className="mt-3 text-2xl font-semibold text-stone-950">
-            Add or delete full skills
-          </h2>
+          <h2 className="mt-3 text-2xl font-semibold text-stone-950">Upload or delete skills</h2>
           <p className="mt-2 text-sm leading-7 text-stone-600">
-            Existing skills only support whole-skill add and delete. There is no file-level
-            edit UI.
+            Upload a skill ZIP with one top-level directory and a `SKILL.md` inside it.
           </p>
         </div>
       </div>
@@ -120,28 +114,25 @@ export default function TemplateSkillList({
       </div>
       <div className="mt-6 grid gap-4 rounded-[1.5rem] border border-dashed border-stone-900/15 bg-stone-50/70 p-5">
         <label className="grid gap-2 text-sm font-medium text-stone-700">
-          skill_name
+          Skill ZIP
           <input
+            accept=".zip,application/zip"
             className="rounded-[1.1rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
-            onChange={(event) => setSkillName(event.target.value)}
-            value={skillName}
+            onChange={(event) => setSkillFile(event.target.files?.[0] ?? null)}
+            type="file"
           />
         </label>
-        <label className="grid gap-2 text-sm font-medium text-stone-700">
-          SKILL.md
-          <textarea
-            className="min-h-56 rounded-[1.1rem] border border-stone-900/12 bg-white px-4 py-4 font-mono text-sm text-stone-950 shadow-sm"
-            onChange={(event) => setSkillMD(event.target.value)}
-            value={skillMD}
-          />
-        </label>
+        <p className="text-sm leading-6 text-stone-600">
+          The ZIP must contain one top-level folder named after the skill, and that folder must
+          include `SKILL.md`.
+        </p>
         <button
           className="w-fit rounded-full bg-stone-950 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={pendingSkillId === "create" || !skillName.trim() || !skillMD.trim()}
+          disabled={pendingSkillId === "create" || !skillFile}
           onClick={() => void handleAddSkill()}
           type="button"
         >
-          {pendingSkillId === "create" ? "Adding..." : "Add Skill"}
+          {pendingSkillId === "create" ? "Uploading..." : "Upload Skill"}
         </button>
       </div>
       {error ? (

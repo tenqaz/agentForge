@@ -1,8 +1,11 @@
 package templates
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,6 +162,45 @@ func (s *Service) AddSkill(ctx context.Context, templateID, skillName, skillMD s
 		return Skill{}, err
 	}
 	checksum, err := s.store.WriteSkill(template, skillName, skillMD)
+	if err != nil {
+		return Skill{}, err
+	}
+	skillPath := filepath.Join(template.SkillsPath, skillName, "SKILL.md")
+	skill, err := s.repository.CreateSkill(ctx, Skill{
+		ID:         uuid.NewString(),
+		TemplateID: template.ID,
+		SkillName:  skillName,
+		SkillPath:  skillPath,
+		Checksum:   checksum,
+	})
+	if err != nil {
+		_ = s.store.DeleteSkill(Skill{SkillPath: skillPath})
+		if errors.Is(err, ErrConflict) {
+			return Skill{}, ErrConflict
+		}
+		return Skill{}, err
+	}
+	if _, err := s.refreshChecksum(ctx, template); err != nil {
+		return Skill{}, err
+	}
+	return skill, nil
+}
+
+func (s *Service) AddSkillArchive(ctx context.Context, templateID string, archive []byte) (Skill, error) {
+	files, skillName, err := parseSkillArchive(archive)
+	if err != nil {
+		return Skill{}, err
+	}
+	template, err := s.editableTemplate(ctx, templateID)
+	if err != nil {
+		return Skill{}, err
+	}
+	if _, err := s.repository.FindSkillByName(ctx, template.ID, skillName); err == nil {
+		return Skill{}, ErrConflict
+	} else if !errors.Is(err, ErrSkillNotFound) {
+		return Skill{}, err
+	}
+	checksum, err := s.store.WriteSkillArchive(template, skillName, files)
 	if err != nil {
 		return Skill{}, err
 	}
@@ -393,4 +435,64 @@ func validSkillName(name string) bool {
 		return false
 	}
 	return filepath.Clean(name) == name
+}
+
+func parseSkillArchive(archive []byte) (map[string][]byte, string, error) {
+	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		return nil, "", ErrInvalidInput
+	}
+	files := map[string][]byte{}
+	var skillName string
+	hasSkillMD := false
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		cleanName := filepath.ToSlash(filepath.Clean(file.Name))
+		if cleanName == "." || strings.HasPrefix(cleanName, "../") || strings.Contains(cleanName, "/../") {
+			return nil, "", ErrInvalidInput
+		}
+		parts := strings.Split(cleanName, "/")
+		if len(parts) < 2 {
+			return nil, "", ErrInvalidInput
+		}
+		if skillName == "" {
+			skillName = parts[0]
+			if !validSkillName(skillName) {
+				return nil, "", ErrInvalidInput
+			}
+		} else if parts[0] != skillName {
+			return nil, "", ErrInvalidInput
+		}
+		relative := strings.Join(parts[1:], "/")
+		if relative == "" || relative == "." || strings.HasPrefix(relative, "../") || strings.Contains(relative, "/../") {
+			return nil, "", ErrInvalidInput
+		}
+		if relative == "SKILL.md" {
+			hasSkillMD = true
+		}
+		content, err := readZipFile(file)
+		if err != nil {
+			return nil, "", err
+		}
+		files[relative] = content
+	}
+	if skillName == "" || !hasSkillMD {
+		return nil, "", ErrInvalidInput
+	}
+	return files, skillName, nil
+}
+
+func readZipFile(file *zip.File) ([]byte, error) {
+	reader, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return content, nil
 }

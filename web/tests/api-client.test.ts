@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createApiClient, registerUser } from "@/lib/api";
+import { addTemplateSkill, createApiClient, registerUser } from "@/lib/api";
 
 describe("createApiClient", () => {
   it("maps backend error payloads that only expose error codes", async () => {
@@ -73,5 +73,42 @@ describe("createApiClient", () => {
     expect(response.status).toBe(409);
     expect(response.error.code).toBe("email_already_exists");
     expect(response.error.message).toContain("email already exists");
+  });
+
+  it("posts skill uploads as multipart form data", async () => {
+    const fetchImpl: typeof fetch = vi.fn(async (_input, init?: RequestInit) => {
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBeInstanceOf(FormData);
+      const form = init?.body as FormData;
+      expect(form.get("file")).toBeInstanceOf(File);
+      return new Response(
+        JSON.stringify({
+          skill: {
+            id: "skill-1",
+            templateId: "template-1",
+            skillName: "handoff",
+            checksum: "abc123",
+            createdAt: "2026-06-15T00:00:00Z",
+          },
+        }),
+        {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    });
+    const client = createApiClient({ fetchImpl, baseUrl: "http://example.test" });
+
+    const response = await addTemplateSkill(
+      client,
+      "template-1",
+      new File(["zip"], "handoff.zip", { type: "application/zip" }),
+    );
+
+    expect(response.ok).toBe(true);
+    if (!response.ok) {
+      throw new Error("expected success response");
+    }
+    expect(response.data.skill.skillName).toBe("handoff");
   });
 });

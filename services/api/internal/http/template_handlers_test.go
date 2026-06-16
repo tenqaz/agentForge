@@ -1,9 +1,12 @@
 package http
 
 import (
+	"archive/zip"
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,7 +35,9 @@ func TestAdminTemplateFlowPublishesTemplateForPublicRoutes(t *testing.T) {
 	if putUserRecorder.Code != http.StatusOK {
 		t.Fatalf("put user status = %d, body = %s", putUserRecorder.Code, putUserRecorder.Body.String())
 	}
-	addSkillRecorder := doJSON(t, router, http.MethodPost, "/api/admin/templates/"+created.ID+"/skills", `{"skillName":"faq","skillMD":"# FAQ\n"}`, adminCookie)
+	addSkillRecorder := doMultipartUpload(t, router, "/api/admin/templates/"+created.ID+"/skills", adminCookie, map[string]string{
+		"faq/SKILL.md": "# FAQ\n",
+	})
 	if addSkillRecorder.Code != http.StatusCreated {
 		t.Fatalf("add skill status = %d, body = %s", addSkillRecorder.Code, addSkillRecorder.Body.String())
 	}
@@ -201,13 +206,17 @@ func TestAdminSkillRoutesRejectDuplicateAndDoNotExposeEditRoutes(t *testing.T) {
 	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
 	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
 
-	first := doJSON(t, router, http.MethodPost, "/api/admin/templates/"+templateID+"/skills", `{"skillName":"faq","skillMD":"# FAQ\n"}`, adminCookie)
+	first := doMultipartUpload(t, router, "/api/admin/templates/"+templateID+"/skills", adminCookie, map[string]string{
+		"faq/SKILL.md": "# FAQ\n",
+	})
 	if first.Code != http.StatusCreated {
 		t.Fatalf("first skill status = %d, body = %s", first.Code, first.Body.String())
 	}
 	assertNoPathFields(t, first.Body.Bytes())
 	skill := decodeSkillResponse(t, first.Body.Bytes()).Skill
-	duplicate := doJSON(t, router, http.MethodPost, "/api/admin/templates/"+templateID+"/skills", `{"skillName":"faq","skillMD":"# duplicate\n"}`, adminCookie)
+	duplicate := doMultipartUpload(t, router, "/api/admin/templates/"+templateID+"/skills", adminCookie, map[string]string{
+		"faq/SKILL.md": "# duplicate\n",
+	})
 	if duplicate.Code != http.StatusConflict {
 		t.Fatalf("duplicate status = %d, want 409, body = %s", duplicate.Code, duplicate.Body.String())
 	}
@@ -239,6 +248,65 @@ func TestAdminSkillRoutesRejectDuplicateAndDoNotExposeEditRoutes(t *testing.T) {
 	router.ServeHTTP(getDeleted, getDeletedRequest)
 	if getDeleted.Code != http.StatusNotFound {
 		t.Fatalf("get deleted skill status = %d, want 404", getDeleted.Code)
+	}
+}
+
+func TestAdminSkillUploadRejectsInvalidArchives(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	cases := []struct {
+		name   string
+		files  map[string]string
+		status int
+	}{
+		{
+			name: "missing skill md",
+			files: map[string]string{
+				"faq/readme.md": "missing skill",
+			},
+			status: http.StatusBadRequest,
+		},
+		{
+			name: "multiple top level directories",
+			files: map[string]string{
+				"faq/SKILL.md": "# FAQ\n",
+				"ops/SKILL.md": "# OPS\n",
+			},
+			status: http.StatusBadRequest,
+		},
+		{
+			name: "path traversal",
+			files: map[string]string{
+				"faq/../oops.txt": "escape",
+				"faq/SKILL.md":    "# FAQ\n",
+			},
+			status: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := doMultipartUpload(t, router, "/api/admin/templates/"+templateID+"/skills", adminCookie, tt.files)
+			if recorder.Code != tt.status {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestAddSkillArchiveRequiresMultipartFile(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/templates/"+templateID+"/skills", nil)
+	request.AddCookie(adminCookie)
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("missing multipart status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -274,7 +342,9 @@ func TestDeletingPublishedSkillReturnsNewDraft(t *testing.T) {
 	router, manager := newTemplateTestRouter(t)
 	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
 	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
-	addSkillRecorder := doJSON(t, router, http.MethodPost, "/api/admin/templates/"+templateID+"/skills", `{"skillName":"faq","skillMD":"# FAQ\n"}`, adminCookie)
+	addSkillRecorder := doMultipartUpload(t, router, "/api/admin/templates/"+templateID+"/skills", adminCookie, map[string]string{
+		"faq/SKILL.md": "# FAQ\n",
+	})
 	if addSkillRecorder.Code != http.StatusCreated {
 		t.Fatalf("add skill status = %d, body = %s", addSkillRecorder.Code, addSkillRecorder.Body.String())
 	}
@@ -311,6 +381,46 @@ func createCompleteDraftViaHTTP(t *testing.T, router http.Handler, adminCookie *
 		t.Fatalf("put user status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 	return templateID
+}
+
+func doMultipartUpload(t *testing.T, handler http.Handler, path string, cookie *http.Cookie, files map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	archive := &bytes.Buffer{}
+	zipWriter := zip.NewWriter(archive)
+	for name, content := range files {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("create zip entry %s: %v", name, err)
+		}
+		if _, err := io.WriteString(entry, content); err != nil {
+			t.Fatalf("write zip entry %s: %v", name, err)
+		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("close zip writer: %v", err)
+	}
+
+	body := &bytes.Buffer{}
+	formWriter := multipart.NewWriter(body)
+	part, err := formWriter.CreateFormFile("file", "skill.zip")
+	if err != nil {
+		t.Fatalf("create multipart file: %v", err)
+	}
+	if _, err := part.Write(archive.Bytes()); err != nil {
+		t.Fatalf("write multipart body: %v", err)
+	}
+	if err := formWriter.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body.Bytes()))
+	request.Header.Set("content-type", formWriter.FormDataContentType())
+	if cookie != nil {
+		request.AddCookie(cookie)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
 }
 
 func newTemplateTestRouter(t *testing.T) (http.Handler, *auth.SessionManager) {

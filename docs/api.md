@@ -114,14 +114,9 @@ List skills for the template.
 
 Add one complete skill.
 
-Request:
+Request: `multipart/form-data` with a `file` field containing a ZIP archive.
 
-```json
-{
-  "skillName": "triage",
-  "skillMD": "# SKILL\nEscalate billing issues."
-}
-```
+The ZIP must contain exactly one top-level directory. That directory name becomes the skill name, and it must include `SKILL.md`.
 
 ### `GET /api/admin/templates/{id}/skills/{skillId}`
 

@@ -51,6 +51,9 @@ function toQueryString(
 }
 
 function isJsonBody(body: unknown): body is ApiJson {
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    return false;
+  }
   return (
     body === null ||
     typeof body === "string" ||
@@ -275,12 +278,13 @@ export async function listTemplateSkills(client: ApiClient, templateId: string) 
 export async function addTemplateSkill(
   client: ApiClient,
   templateId: string,
-  skillName: string,
-  skillMD: string,
+  file: File,
 ) {
-  return client.post<SkillResponse, { skillName: string; skillMD: string }>(
+  const body = new FormData();
+  body.append("file", file);
+  return client.post<SkillResponse, FormData>(
     `/api/admin/templates/${templateId}/skills`,
-    { skillName, skillMD },
+    body,
   );
 }
 
