@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 test("visitor can register and is redirected to login without being signed in", async ({
   page,
 }) => {
+  let loginAttemptCount = 0;
+
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -33,6 +35,16 @@ test("visitor can register and is redirected to login without being signed in", 
       return;
     }
 
+    if (pathname === "/api/sessions" && request.method() === "POST") {
+      loginAttemptCount += 1;
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "invalid credentials" }),
+      });
+      return;
+    }
+
     await route.fulfill({
       status: 404,
       body: `Unhandled ${request.method()} ${pathname}`,
@@ -48,6 +60,7 @@ test("visitor can register and is redirected to login without being signed in", 
   await expect(
     page.getByText("Account created. Sign in with your new email and password."),
   ).toBeVisible();
+  expect(loginAttemptCount).toBe(0);
   await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
   await expect(page.getByLabel("Email")).toBeVisible();
   await expect(page).not.toHaveURL(/\/templates$/);
