@@ -4,6 +4,7 @@ test("visitor can register and is redirected to login without being signed in", 
   page,
 }) => {
   let loginAttemptCount = 0;
+  let registrationRequestCount = 0;
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -20,6 +21,7 @@ test("visitor can register and is redirected to login without being signed in", 
     }
 
     if (pathname === "/api/users" && request.method() === "POST") {
+      registrationRequestCount += 1;
       const body = JSON.parse(request.postData() ?? "{}");
       await route.fulfill({
         status: 201,
@@ -60,6 +62,7 @@ test("visitor can register and is redirected to login without being signed in", 
   await expect(
     page.getByText("Account created. Sign in with your new email and password."),
   ).toBeVisible();
+  expect(registrationRequestCount).toBe(1);
   expect(loginAttemptCount).toBe(0);
   await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
   await expect(page.getByLabel("Email")).toBeVisible();
