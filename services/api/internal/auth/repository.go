@@ -55,6 +55,13 @@ func (r *Repository) CreateUser(ctx context.Context, params CreateUserParams) (U
 	if err := validatePassword(params.Password); err != nil {
 		return User{}, err
 	}
+	exists, err := r.emailExists(ctx, email)
+	if err != nil {
+		return User{}, err
+	}
+	if exists {
+		return User{}, ErrEmailAlreadyExists
+	}
 
 	role := params.Role
 	if role == "" {
@@ -237,4 +244,21 @@ func validatePassword(password string) error {
 		return ErrInvalidPassword
 	}
 	return nil
+}
+
+func (r *Repository) emailExists(ctx context.Context, normalizedEmail string) (bool, error) {
+	var existingID string
+	err := r.database.QueryRowContext(ctx, `
+		SELECT id
+		FROM users
+		WHERE lower(trim(email)) = ?
+		LIMIT 1;
+	`, normalizedEmail).Scan(&existingID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

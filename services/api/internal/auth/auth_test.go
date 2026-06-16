@@ -157,6 +157,31 @@ func TestCreateUser_RejectsInvalidEmailWeakPasswordAndDuplicateEmail(t *testing.
 	}
 }
 
+func TestCreateUser_RejectsLegacyNormalizedEmailCollision(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('legacy-user', ' USER@Example.com ', ?, 'user');
+	`, hash)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	repo := NewRepository(database)
+	_, err = repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "xyz12345",
+		Role:     RoleUser,
+	})
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("CreateUser error = %v, want ErrEmailAlreadyExists", err)
+	}
+}
+
 func TestFindUserByEmail_NormalizesLookupAfterCreateUser(t *testing.T) {
 	database := newAuthTestDB(t)
 	repo := NewRepository(database)
