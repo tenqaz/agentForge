@@ -212,14 +212,22 @@ func (h *TemplateHandlers) AddSkill(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireAdminUser(w, r); !ok {
 		return
 	}
-	var request struct {
-		SkillName string `json:"skillName"`
-		SkillMD   string `json:"skillMD"`
-	}
-	if !decodeRequest(w, r, &request) {
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	skill, err := h.service.AddSkill(r.Context(), r.PathValue("id"), request.SkillName, request.SkillMD)
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	defer file.Close()
+	archive, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	skill, err := h.service.AddSkillArchive(r.Context(), r.PathValue("id"), archive)
 	if err != nil {
 		writeTemplateError(w, err)
 		return

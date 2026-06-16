@@ -29,6 +29,6 @@
 
 ## Admin Template Surface
 
-- Admins can add and delete complete skills.
+- Admins can add complete skills by uploading a ZIP archive and delete complete skills.
 - MVP does not expose a skill edit endpoint.
 - MVP does not expose a skill replace endpoint.

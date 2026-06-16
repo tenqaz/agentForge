@@ -190,6 +190,28 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 	return checksumString(string(skillMD)), nil
 }
 
+func (s *FileStore) WriteSkillArchive(template Template, skillName string, files map[string][]byte) (string, error) {
+	skillRoot := filepath.Join(template.SkillsPath, skillName)
+	for relative, content := range files {
+		if relative == "" || relative == "." {
+			return "", ErrInvalidInput
+		}
+		targetPath := filepath.Join(skillRoot, relative)
+		if !isPathWithin(skillRoot, targetPath) {
+			return "", ErrInvalidInput
+		}
+		if err := writeFileBytes(targetPath, content); err != nil {
+			return "", err
+		}
+	}
+	skillMD, ok := files["SKILL.md"]
+	if !ok || !hasRequiredSkillFrontmatter(string(skillMD)) {
+		_ = os.RemoveAll(skillRoot)
+		return "", ErrInvalidInput
+	}
+	return checksumBytes(files), nil
+}
+
 func (s *FileStore) ReadSkill(skill Skill) (string, error) {
 	return readFile(skill.SkillPath)
 }
@@ -300,6 +322,13 @@ func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
+func writeFileBytes(path string, content []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, content, 0o644)
+}
+
 func readFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -380,4 +409,28 @@ func hasRequiredSkillFrontmatter(content string) bool {
 		}
 	}
 	return false
+}
+
+func checksumBytes(files map[string][]byte) string {
+	hash := sha256.New()
+	keys := make([]string, 0, len(files))
+	for key := range files {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		_, _ = hash.Write([]byte(key))
+		_, _ = hash.Write([]byte{0})
+		_, _ = hash.Write(files[key])
+		_, _ = hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func isPathWithin(root, target string) bool {
+	relative, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }

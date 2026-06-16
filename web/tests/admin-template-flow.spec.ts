@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 test("admin can create, edit, add/delete skill, and publish a template", async ({
   page,
@@ -178,11 +181,13 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
         });
         return;
       }
-      const body = JSON.parse(request.postData() ?? "{}");
+      const body = await request.postDataBuffer();
+      expect(request.headers()["content-type"] ?? "").toContain("multipart/form-data");
+      expect(body?.length ?? 0).toBeGreaterThan(0);
       const skill = {
         id: "skill-2",
         templateId: template.id,
-        skillName: body.skillName,
+        skillName: "handoff",
         checksum: "def456",
         createdAt: "2026-06-15T00:00:00Z",
       };
@@ -241,15 +246,16 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
   await page.getByRole("button", { name: "Create Draft" }).click();
 
   await expect(page).toHaveURL(/\/admin\/templates\/template-1$/);
-  await expect(page.getByText("triage")).toBeVisible();
+  await expect(page.getByText("triage", { exact: true })).toBeVisible();
   await page.getByRole("textbox").nth(2).fill("# Soul\nYou are calm and direct.");
   await page.getByRole("button", { name: "Save SOUL" }).click();
   await page.getByRole("textbox").nth(3).fill("# User\nPrefer concise answers.");
   await page.getByRole("button", { name: "Save USER" }).click();
 
-  await page.getByLabel("skill_name").fill("handoff");
-  await page.getByLabel("SKILL.md").fill("# SKILL\nEscalate to humans when needed.");
-  await page.getByRole("button", { name: "Add Skill" }).click();
+  const skillZip = join(mkdtempSync(join(tmpdir(), "agentforge-skill-")), "handoff.zip");
+  writeFileSync(skillZip, "placeholder");
+  await page.getByLabel("Skill ZIP").setInputFiles(skillZip);
+  await page.getByRole("button", { name: "Upload Skill" }).click();
   await expect(page.getByText("handoff")).toBeVisible();
   await expect(page.getByRole("button", { name: /Edit skill/i })).toHaveCount(0);
 

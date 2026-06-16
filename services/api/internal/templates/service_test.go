@@ -235,6 +235,107 @@ func TestServiceCreateWithContentsRollsBackOnInvalidSkillArchive(t *testing.T) {
 	}
 }
 
+func TestServiceAddSkillArchiveWritesWholeSkillDirectory(t *testing.T) {
+	service, dataDir := newTestService(t)
+	ctx := context.Background()
+	template, err := service.Create(ctx, "admin-1", "Support Agent", "")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	skill, err := service.AddSkillArchive(ctx, template.ID, mustZipSkill(t, map[string]string{
+		"handoff/SKILL.md":         "---\nname: handoff\ndescription: Escalation path\n---\n# SKILL\nEscalate to humans when needed.\n",
+		"handoff/references/a.md":  "reference",
+		"handoff/scripts/run.sh":   "#!/bin/sh\nexit 0\n",
+	}))
+	if err != nil {
+		t.Fatalf("AddSkillArchive returned error: %v", err)
+	}
+	if skill.SkillName != "handoff" {
+		t.Fatalf("skill name = %q, want handoff", skill.SkillName)
+	}
+
+	skillDir := filepath.Join(dataDir, "templates", template.ID, "versions", "1", "skills", "handoff")
+	for _, relative := range []string{"SKILL.md", "references/a.md", "scripts/run.sh"} {
+		if _, err := os.Stat(filepath.Join(skillDir, relative)); err != nil {
+			t.Fatalf("expected skill file %s: %v", relative, err)
+		}
+	}
+}
+
+func TestServiceAddSkillArchiveRejectsInvalidArchives(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+	template, err := service.Create(ctx, "admin-1", "Support Agent", "")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		archive []byte
+	}{
+		{
+			name: "multiple top level directories",
+			archive: mustZipSkill(t, map[string]string{
+				"faq/SKILL.md": "# FAQ\n",
+				"ops/SKILL.md": "# OPS\n",
+			}),
+		},
+		{
+			name: "missing skill md",
+			archive: mustZipSkill(t, map[string]string{
+				"faq/readme.md": "missing skill",
+			}),
+		},
+		{
+			name: "invalid top level directory name",
+			archive: mustZipSkill(t, map[string]string{
+				"../bad/SKILL.md": "# bad\n",
+			}),
+		},
+		{
+			name: "path traversal",
+			archive: mustZipSkill(t, map[string]string{
+				"faq/../oops.txt": "escape",
+				"faq/SKILL.md":    "# FAQ\n",
+			}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := service.AddSkillArchive(ctx, template.ID, tt.archive); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("AddSkillArchive error = %v, want ErrInvalidInput", err)
+			}
+		})
+	}
+}
+
+func TestServiceAddSkillArchiveCreatesDraftWhenEditingPublishedTemplate(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+	published := createPublishableTemplate(t, service)
+
+	skill, err := service.AddSkillArchive(ctx, published.ID, mustZipSkill(t, map[string]string{
+		"handoff/SKILL.md": "---\nname: handoff\ndescription: Escalation path\n---\n# SKILL\nEscalate.\n",
+	}))
+	if err != nil {
+		t.Fatalf("AddSkillArchive returned error: %v", err)
+	}
+	if skill.TemplateID == published.ID {
+		t.Fatalf("published template was edited in place: %#v", skill)
+	}
+
+	skills, err := service.ListSkills(ctx, skill.TemplateID)
+	if err != nil {
+		t.Fatalf("ListSkills returned error: %v", err)
+	}
+	if len(skills) != 2 {
+		t.Fatalf("skills after clone = %d, want 2", len(skills))
+	}
+}
+
 func TestRepositoryCreateSkillMapsUniqueConstraintToConflict(t *testing.T) {
 	database := newTemplatesTestDB(t)
 	repository := NewRepository(database)
@@ -387,4 +488,8 @@ func createSkillArchive(t *testing.T, files map[string]string) []byte {
 		t.Fatalf("Close zip writer: %v", err)
 	}
 	return buffer.Bytes()
+}
+
+func mustZipSkill(t *testing.T, files map[string]string) []byte {
+	return createSkillArchive(t, files)
 }
