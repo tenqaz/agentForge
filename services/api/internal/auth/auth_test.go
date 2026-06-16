@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -153,6 +154,58 @@ func TestCreateUser_RejectsInvalidEmailWeakPasswordAndDuplicateEmail(t *testing.
 	})
 	if !errors.Is(err, ErrEmailAlreadyExists) {
 		t.Fatalf("duplicate email error = %v, want ErrEmailAlreadyExists", err)
+	}
+}
+
+func TestFindUserByEmail_NormalizesLookupAfterCreateUser(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	created, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "abc12345",
+		Role:     RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser returned error: %v", err)
+	}
+
+	user, err := repo.FindUserByEmail(context.Background(), "  USER@example.com ")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != created.ID || user.Email != "user@example.com" || user.Role != RoleUser {
+		t.Fatalf("unexpected user: %#v", user)
+	}
+	if user.PasswordHash != "" {
+		t.Fatalf("FindUserByEmail exposed password hash: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_NormalizesLookupForExistingNormalizedRecord(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('user-2', 'user@example.com', ?, 'user');
+	`, hash)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), " USER@EXAMPLE.COM ")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "user-2" || user.Email != "user@example.com" || user.Role != RoleUser {
+		t.Fatalf("unexpected user: %#v", user)
+	}
+	if user.PasswordHash != "" {
+		t.Fatalf("FindUserByEmail exposed password hash: %#v", user)
 	}
 }
 
@@ -376,7 +429,7 @@ func TestRBACRules(t *testing.T) {
 
 func newAuthTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := sql.Open("sqlite", "file:auth-test?mode=memory&cache=shared")
+	database, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "-")))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
