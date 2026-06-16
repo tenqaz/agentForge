@@ -190,6 +190,25 @@ func (r *Repository) EnsureDefaultAdmin(ctx context.Context) error {
 		return err
 	}
 
+	legacyAdmin, err := r.FindUserByEmail(ctx, "admin")
+	if err == nil {
+		if legacyAdmin.ID == "admin" && legacyAdmin.Role == RoleAdmin {
+			_, err = r.database.ExecContext(ctx, `
+				UPDATE users
+				SET email = ?
+				WHERE id = ? AND email = ? AND role = ?;
+			`, "admin@123.com", "admin", "admin", RoleAdmin)
+			if isUniqueConstraint(err) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+	if !errors.Is(err, ErrUserNotFound) {
+		return err
+	}
+
 	hash, err := HashPassword("admin")
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)

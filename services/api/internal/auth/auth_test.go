@@ -519,6 +519,57 @@ func TestEnsureDefaultAdmin_AlreadyExists(t *testing.T) {
 	}
 }
 
+func TestEnsureDefaultAdmin_UpgradesLegacySeededAdmin(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	legacyHash, err := HashPassword("admin")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('admin', 'admin', ?, 'admin');
+	`, legacyHash)
+	if err != nil {
+		t.Fatalf("insert legacy admin: %v", err)
+	}
+
+	if err := repo.EnsureDefaultAdmin(context.Background()); err != nil {
+		t.Fatalf("EnsureDefaultAdmin returned error: %v", err)
+	}
+
+	var count int
+	err = database.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
+	if err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("got %d users, want 1", count)
+	}
+
+	user, err := repo.FindUserByEmail(context.Background(), "admin@123.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "admin" || user.Email != "admin@123.com" || user.Role != RoleAdmin {
+		t.Fatalf("unexpected upgraded admin after ensure: %#v", user)
+	}
+
+	hash, err := repo.PasswordHashForUser(context.Background(), "admin")
+	if err != nil {
+		t.Fatalf("PasswordHashForUser returned error: %v", err)
+	}
+	if !CheckPassword(hash, "admin") {
+		t.Fatal("legacy admin password does not verify after upgrade")
+	}
+
+	_, err = repo.FindUserByEmail(context.Background(), "admin")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("FindUserByEmail(admin) error = %v, want ErrUserNotFound", err)
+	}
+}
+
 func TestRBACRules(t *testing.T) {
 	admin := User{ID: "admin-1", Role: RoleAdmin}
 	user := User{ID: "user-1", Role: RoleUser}
