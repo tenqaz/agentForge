@@ -33,17 +33,6 @@ test("visitor can register and is redirected to login without being signed in", 
       return;
     }
 
-    if (pathname === "/api/sessions" && request.method() === "POST") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          user: { id: "user-1", email: "user@example.com", role: "user" },
-        }),
-      });
-      return;
-    }
-
     await route.fulfill({
       status: 404,
       body: `Unhandled ${request.method()} ${pathname}`,
