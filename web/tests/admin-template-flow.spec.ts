@@ -4,8 +4,17 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
   page,
 }) => {
   let signedIn = false;
-  let template = {
-    id: "template-1",
+  let template: {
+    id: string;
+    name: string;
+    description: string;
+    status: "draft" | "published";
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+    publishedAt: string | null;
+  } = {
+    id: "template-0",
     name: "Launch Assistant",
     description: "Initial draft",
     status: "draft",
@@ -66,16 +75,42 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ templates: [template] }),
+        body: JSON.stringify({ templates: [] }),
       });
       return;
     }
 
     if (pathname === "/api/admin/templates" && request.method() === "POST") {
-      const body = JSON.parse(request.postData() ?? "{}");
-      template = { ...template, name: body.name, description: body.description };
+      const contentType = request.headers()["content-type"] ?? "";
+      expect(contentType).toContain("multipart/form-data");
+      template = {
+        ...template,
+        id: "template-1",
+        name: "Support Coach",
+        description: "Helps ops teams triage requests.",
+      };
+      soul = "# Soul\nYou are calm and direct.";
+      userContent = "# User\nPrefer concise answers.";
+      skills = [
+        {
+          id: "skill-1",
+          templateId: "template-1",
+          skillName: "triage",
+          checksum: "checksum-1",
+          createdAt: "2026-06-15T00:00:00Z",
+        },
+      ];
       await route.fulfill({
         status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ template }),
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/templates/${template.id}` && request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
         contentType: "application/json",
         body: JSON.stringify({ template }),
       });
@@ -90,6 +125,11 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
         contentType: "application/json",
         body: JSON.stringify({ template }),
       });
+      return;
+    }
+
+    if (pathname === `/api/admin/templates/${template.id}` && request.method() === "DELETE") {
+      await route.fulfill({ status: 204 });
       return;
     }
 
@@ -191,9 +231,17 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
   await page.getByRole("link", { name: "New Draft" }).click();
   await page.getByLabel("Name").fill("Support Coach");
   await page.getByLabel("Description").fill("Helps ops teams triage requests.");
+  await page.getByLabel("SOUL.md").fill("# Soul\nYou are calm and direct.");
+  await page.getByLabel("USER.md").fill("# User\nPrefer concise answers.");
+  await page.getByLabel("Skill ZIPs").setInputFiles({
+    name: "triage.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from("fake-zip"),
+  });
   await page.getByRole("button", { name: "Create Draft" }).click();
 
   await expect(page).toHaveURL(/\/admin\/templates\/template-1$/);
+  await expect(page.getByText("triage")).toBeVisible();
   await page.getByRole("textbox").nth(2).fill("# Soul\nYou are calm and direct.");
   await page.getByRole("button", { name: "Save SOUL" }).click();
   await page.getByRole("textbox").nth(3).fill("# User\nPrefer concise answers.");
@@ -210,4 +258,9 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
 
   await page.getByRole("button", { name: "Publish" }).click();
   await expect(page.getByRole("button", { name: "Unpublish" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete Template" }).click();
+  await page.getByRole("button", { name: "Confirm Delete" }).click();
+  await expect(page).toHaveURL(/\/admin\/templates$/);
+  await expect(page.getByRole("link", { name: "Support Coach" })).toHaveCount(0);
 });

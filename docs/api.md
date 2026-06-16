@@ -59,7 +59,13 @@ All `/api/admin/templates*` routes require an admin session.
 
 ### `GET /api/admin/templates`
 
-List templates for admin management.
+List active templates for admin management.
+
+Archived templates are hidden from this default list.
+
+### `GET /api/admin/templates/{id}`
+
+Get one template for admin management.
 
 ### `POST /api/admin/templates`
 

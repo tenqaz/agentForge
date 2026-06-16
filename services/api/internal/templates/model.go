@@ -43,3 +43,17 @@ type Skill struct {
 	Checksum   string `json:"checksum"`
 	CreatedAt  string `json:"createdAt"`
 }
+
+type SkillArchive struct {
+	Filename string
+	Content  []byte
+}
+
+type CreateTemplateParams struct {
+	CreatedBy     string
+	Name          string
+	Description   string
+	SoulContent   string
+	UserContent   string
+	SkillArchives []SkillArchive
+}

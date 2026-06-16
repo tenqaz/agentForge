@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -81,6 +84,110 @@ func (s *FileStore) ReadUser(template Template) (string, error) {
 func (s *FileStore) WriteSkill(template Template, skillName, content string) (string, error) {
 	skillPath := filepath.Join(template.SkillsPath, skillName, "SKILL.md")
 	return checksumString(content), writeFile(skillPath, content)
+}
+
+func (s *FileStore) ImportSkillArchive(template Template, skillName string, content []byte) (string, error) {
+	if !validSkillName(skillName) || len(content) == 0 {
+		return "", ErrInvalidInput
+	}
+	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return "", ErrInvalidInput
+	}
+
+	type archiveEntry struct {
+		path string
+		file *zip.File
+	}
+
+	var root string
+	wrappedRoot := true
+	entries := make([]archiveEntry, 0, len(reader.File))
+	for _, file := range reader.File {
+		cleaned := filepath.Clean(file.Name)
+		if cleaned == "." || strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
+			return "", ErrInvalidInput
+		}
+		parts := strings.Split(cleaned, string(filepath.Separator))
+		if len(parts) == 0 || parts[0] == "" {
+			return "", ErrInvalidInput
+		}
+		if len(parts) < 2 {
+			wrappedRoot = false
+		}
+		if root == "" {
+			root = parts[0]
+		} else if parts[0] != root {
+			wrappedRoot = false
+		}
+		entries = append(entries, archiveEntry{path: cleaned, file: file})
+	}
+	if len(entries) == 0 {
+		return "", ErrInvalidInput
+	}
+	if !wrappedRoot {
+		root = ""
+	}
+
+	skillDir := filepath.Join(template.SkillsPath, skillName)
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		return "", err
+	}
+	hasSkillMD := false
+	for _, entry := range entries {
+		relative := entry.path
+		if root != "" {
+			trimmed := strings.TrimPrefix(relative, root)
+			trimmed = strings.TrimPrefix(trimmed, string(filepath.Separator))
+			if trimmed == "" {
+				continue
+			}
+			relative = trimmed
+		}
+		targetPath := filepath.Join(skillDir, relative)
+		if !strings.HasPrefix(targetPath, skillDir) {
+			return "", ErrInvalidInput
+		}
+		if entry.file.FileInfo().IsDir() {
+			if err := os.MkdirAll(targetPath, 0o755); err != nil {
+				return "", err
+			}
+			continue
+		}
+		reader, err := entry.file.Open()
+		if err != nil {
+			return "", err
+		}
+		data, err := io.ReadAll(reader)
+		_ = reader.Close()
+		if err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(targetPath, data, 0o644); err != nil {
+			return "", err
+		}
+		if relative == "SKILL.md" {
+			hasSkillMD = true
+		}
+	}
+	if !hasSkillMD {
+		_ = os.RemoveAll(skillDir)
+		return "", ErrInvalidInput
+	}
+	skillMDPath := filepath.Join(skillDir, "SKILL.md")
+	skillMD, err := os.ReadFile(skillMDPath)
+	if err != nil {
+		_ = os.RemoveAll(skillDir)
+		return "", err
+	}
+	if !hasRequiredSkillFrontmatter(string(skillMD)) {
+		_ = os.RemoveAll(skillDir)
+		return "", ErrInvalidInput
+	}
+	return checksumString(string(skillMD)), nil
 }
 
 func (s *FileStore) ReadSkill(skill Skill) (string, error) {
@@ -247,4 +354,30 @@ func copyDirIfExists(source, target string) error {
 		}
 		return copyFileIfExists(path, targetPath)
 	})
+}
+
+func hasRequiredSkillFrontmatter(content string) bool {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "---" {
+		return false
+	}
+	foundName := false
+	foundDescription := false
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			return foundName && foundDescription
+		}
+		key, value, ok := strings.Cut(trimmed, ":")
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "name":
+			foundName = true
+		case "description":
+			foundDescription = true
+		}
+	}
+	return false
 }

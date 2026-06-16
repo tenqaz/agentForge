@@ -1,10 +1,13 @@
 package tests
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,15 +36,20 @@ func TestMVPIntegrationAdminPublishesUserCreatesAgentAndWeixinConnects(t *testin
 	adminCookie := loginAndGetCookie(t, fixture.router, "admin@example.com", "secret-password")
 	userCookie := loginAndGetCookie(t, fixture.router, "user@example.com", "secret-password")
 
-	createTemplate := doJSON(t, fixture.router, http.MethodPost, "/api/admin/templates", `{"name":"Support Concierge","description":"Handles private support requests."}`, adminCookie)
+	createTemplate := doMultipartTemplateCreate(t, fixture.router, adminCookie, "Support Concierge", "Handles private support requests.", "# Soul\nCalm, direct, reliable.", "# User\nAnswer concisely.", []multipartSkillFile{
+		{name: "triage.zip", content: makeSkillArchive(t, map[string]string{
+			"SKILL.md": "---\nname: Triage\ndescription: Escalate billing issues.\n---\n# SKILL\nEscalate billing issues.\n",
+		})},
+	})
 	if createTemplate.Code != http.StatusCreated {
 		t.Fatalf("create template status = %d, body = %s", createTemplate.Code, createTemplate.Body.String())
 	}
 	templateID := decodeTemplateID(t, createTemplate.Body.Bytes())
 
-	assertStatus(t, doJSON(t, fixture.router, http.MethodPut, "/api/admin/templates/"+templateID+"/soul", `{"content":"# Soul\nCalm, direct, reliable."}`, adminCookie), http.StatusOK)
-	assertStatus(t, doJSON(t, fixture.router, http.MethodPut, "/api/admin/templates/"+templateID+"/user", `{"content":"# User\nAnswer concisely."}`, adminCookie), http.StatusOK)
-	assertStatus(t, doJSON(t, fixture.router, http.MethodPost, "/api/admin/templates/"+templateID+"/skills", `{"skillName":"triage","skillMD":"# SKILL\nEscalate billing issues."}`, adminCookie), http.StatusCreated)
+	adminDetail := doAuthedRequest(t, fixture.router, http.MethodGet, "/api/admin/templates/"+templateID, "", adminCookie)
+	if adminDetail.Code != http.StatusOK || !bytes.Contains(adminDetail.Body.Bytes(), []byte(templateID)) {
+		t.Fatalf("admin detail status/body = %d / %s", adminDetail.Code, adminDetail.Body.String())
+	}
 
 	publish := doJSON(t, fixture.router, http.MethodPut, "/api/admin/templates/"+templateID+"/publication", `{}`, adminCookie)
 	if publish.Code != http.StatusOK {
@@ -380,4 +388,64 @@ func findCookie(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie 
 	}
 	t.Fatalf("cookie %q not found", name)
 	return nil
+}
+
+type multipartSkillFile struct {
+	name    string
+	content []byte
+}
+
+func doMultipartTemplateCreate(t *testing.T, router http.Handler, cookie *http.Cookie, name, description, soulContent, userContent string, skills []multipartSkillFile) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for field, value := range map[string]string{
+		"name":        name,
+		"description": description,
+		"soulContent": soulContent,
+		"userContent": userContent,
+	} {
+		if err := writer.WriteField(field, value); err != nil {
+			t.Fatalf("WriteField(%s): %v", field, err)
+		}
+	}
+	for _, skill := range skills {
+		part, err := writer.CreateFormFile("skillZips", skill.name)
+		if err != nil {
+			t.Fatalf("CreateFormFile(%s): %v", skill.name, err)
+		}
+		if _, err := part.Write(skill.content); err != nil {
+			t.Fatalf("Write skill archive %s: %v", skill.name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close multipart writer: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/templates", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	if cookie != nil {
+		request.AddCookie(cookie)
+	}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func makeSkillArchive(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for name, content := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create zip entry %s: %v", name, err)
+		}
+		if _, err := io.Copy(entry, strings.NewReader(content)); err != nil {
+			t.Fatalf("Write zip entry %s: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close zip writer: %v", err)
+	}
+	return buffer.Bytes()
 }

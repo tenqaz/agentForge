@@ -9,9 +9,9 @@ import TemplateEditor from "@/components/template-editor";
 import TemplateSkillList from "@/components/template-skill-list";
 import {
   apiErrorMessage,
+  getAdminTemplate,
   getTemplateSoul,
   getTemplateUser,
-  listAdminTemplates,
   listTemplateSkills,
   type Skill,
   type Template,
@@ -47,26 +47,14 @@ export default function AdminTemplateDetailPage({
 
     let active = true;
     void (async () => {
-      const templatesResponse = await listAdminTemplates(apiClient);
-      if (!templatesResponse.ok) {
+      const templateResponse = await getAdminTemplate(apiClient, id);
+      if (!templateResponse.ok) {
         if (active) {
-          setError(
-            apiErrorMessage(
-              templatesResponse.error.code,
-              templatesResponse.error.message,
-            ),
-          );
+          setError(apiErrorMessage(templateResponse.error.code, templateResponse.error.message));
         }
         return;
       }
-      const currentTemplate =
-        templatesResponse.data.templates.find((entry) => entry.id === id) ?? null;
-      if (!currentTemplate) {
-        if (active) {
-          setError("Template not found.");
-        }
-        return;
-      }
+      const currentTemplate = templateResponse.data.template;
 
       const [soulResponse, userResponse, skillsResponse] = await Promise.all([
         getTemplateSoul(apiClient, currentTemplate.id),

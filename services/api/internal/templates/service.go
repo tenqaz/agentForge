@@ -56,12 +56,75 @@ func (s *Service) Create(ctx context.Context, createdBy, name, description strin
 	return created, nil
 }
 
+func (s *Service) CreateWithContents(ctx context.Context, params CreateTemplateParams) (Template, error) {
+	template, err := s.Create(ctx, params.CreatedBy, params.Name, params.Description)
+	if err != nil {
+		return Template{}, err
+	}
+	if strings.TrimSpace(params.SoulContent) == "" {
+		_ = s.repository.DeleteTemplate(ctx, template.ID)
+		_ = s.store.DeleteTemplate(template)
+		return Template{}, ErrInvalidInput
+	}
+	if err := s.store.WriteSoul(template, params.SoulContent); err != nil {
+		_ = s.repository.DeleteTemplate(ctx, template.ID)
+		_ = s.store.DeleteTemplate(template)
+		return Template{}, err
+	}
+	if err := s.store.WriteUser(template, params.UserContent); err != nil {
+		_ = s.repository.DeleteTemplate(ctx, template.ID)
+		_ = s.store.DeleteTemplate(template)
+		return Template{}, err
+	}
+	for _, archive := range params.SkillArchives {
+		skillName := strings.TrimSpace(strings.TrimSuffix(archive.Filename, filepath.Ext(archive.Filename)))
+		if !validSkillName(skillName) {
+			_ = s.repository.DeleteTemplate(ctx, template.ID)
+			_ = s.store.DeleteTemplate(template)
+			return Template{}, ErrInvalidInput
+		}
+		if _, err := s.repository.FindSkillByName(ctx, template.ID, skillName); err == nil {
+			_ = s.repository.DeleteTemplate(ctx, template.ID)
+			_ = s.store.DeleteTemplate(template)
+			return Template{}, ErrConflict
+		} else if !errors.Is(err, ErrSkillNotFound) {
+			_ = s.repository.DeleteTemplate(ctx, template.ID)
+			_ = s.store.DeleteTemplate(template)
+			return Template{}, err
+		}
+		checksum, err := s.store.ImportSkillArchive(template, skillName, archive.Content)
+		if err != nil {
+			_ = s.repository.DeleteTemplate(ctx, template.ID)
+			_ = s.store.DeleteTemplate(template)
+			if errors.Is(err, ErrInvalidInput) {
+				return Template{}, ErrInvalidInput
+			}
+			return Template{}, err
+		}
+		if _, err := s.repository.CreateSkill(ctx, Skill{
+			ID:         uuid.NewString(),
+			TemplateID: template.ID,
+			SkillName:  skillName,
+			SkillPath:  filepath.Join(template.SkillsPath, skillName, "SKILL.md"),
+			Checksum:   checksum,
+		}); err != nil {
+			_ = s.repository.DeleteTemplate(ctx, template.ID)
+			_ = s.store.DeleteTemplate(template)
+			if errors.Is(err, ErrConflict) {
+				return Template{}, ErrConflict
+			}
+			return Template{}, err
+		}
+	}
+	return s.refreshChecksum(ctx, template)
+}
+
 func (s *Service) ListPublished(ctx context.Context) ([]Template, error) {
 	return s.repository.ListTemplates(ctx, StatusPublished)
 }
 
 func (s *Service) ListAdmin(ctx context.Context) ([]Template, error) {
-	return s.repository.ListTemplates(ctx)
+	return s.repository.ListTemplates(ctx, StatusDraft, StatusPublished)
 }
 
 func (s *Service) Get(ctx context.Context, id string) (Template, error) {

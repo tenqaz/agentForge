@@ -1,11 +1,16 @@
 package http
 
 import (
+	"archive/zip"
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"agentforge.local/services/api/internal/auth"
@@ -18,20 +23,12 @@ func TestAdminTemplateFlowPublishesTemplateForPublicRoutes(t *testing.T) {
 	router, manager := newTemplateTestRouter(t)
 	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
 
-	createRecorder := doJSON(t, router, http.MethodPost, "/api/admin/templates", `{"name":"Support Agent","description":"answers customers"}`, adminCookie)
+	createRecorder := doMultipartTemplateCreate(t, router, adminCookie, "Support Agent", "answers customers", "Original soul.", "Original user.", nil)
 	if createRecorder.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", createRecorder.Code, createRecorder.Body.String())
 	}
 	created := decodeTemplateResponse(t, createRecorder.Body.Bytes()).Template
 
-	putSoulRecorder := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+created.ID+"/soul", `{"content":"Original soul."}`, adminCookie)
-	if putSoulRecorder.Code != http.StatusOK {
-		t.Fatalf("put soul status = %d, body = %s", putSoulRecorder.Code, putSoulRecorder.Body.String())
-	}
-	putUserRecorder := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+created.ID+"/user", `{"content":"Original user."}`, adminCookie)
-	if putUserRecorder.Code != http.StatusOK {
-		t.Fatalf("put user status = %d, body = %s", putUserRecorder.Code, putUserRecorder.Body.String())
-	}
 	addSkillRecorder := doJSON(t, router, http.MethodPost, "/api/admin/templates/"+created.ID+"/skills", `{"skillName":"faq","skillMD":"# FAQ\n"}`, adminCookie)
 	if addSkillRecorder.Code != http.StatusCreated {
 		t.Fatalf("add skill status = %d, body = %s", addSkillRecorder.Code, addSkillRecorder.Body.String())
@@ -85,6 +82,107 @@ func TestAdminCanListDraftTemplatesWithoutPathFields(t *testing.T) {
 	assertNoPathFields(t, listRecorder.Body.Bytes())
 	if !bytes.Contains(listRecorder.Body.Bytes(), []byte(templateID)) {
 		t.Fatalf("admin list body %s does not include draft template %s", listRecorder.Body.String(), templateID)
+	}
+}
+
+func TestAdminListExcludesArchivedTemplates(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	archiveRecorder := httptest.NewRecorder()
+	archiveRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID, nil)
+	archiveRequest.AddCookie(adminCookie)
+	router.ServeHTTP(archiveRecorder, archiveRequest)
+	if archiveRecorder.Code != http.StatusNoContent {
+		t.Fatalf("archive status = %d, body = %s", archiveRecorder.Code, archiveRecorder.Body.String())
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/templates", nil)
+	listRequest.AddCookie(adminCookie)
+	router.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("admin list status = %d, body = %s", listRecorder.Code, listRecorder.Body.String())
+	}
+	if bytes.Contains(listRecorder.Body.Bytes(), []byte(templateID)) {
+		t.Fatalf("archived template leaked into admin list: %s", listRecorder.Body.String())
+	}
+}
+
+func TestAdminCanCreateTemplateWithMultipartContentsAndSkillArchive(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	archive := makeSkillArchive(t, map[string]string{
+		"SKILL.md": "---\nname: FAQ\ndescription: Frequently asked questions\n---\n# FAQ\n",
+	})
+
+	createRecorder := doMultipartTemplateCreate(t, router, adminCookie, "Support Agent", "answers customers", "Original soul.", "Original user.", []multipartSkillFile{
+		{name: "faq.zip", content: archive},
+	})
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createRecorder.Code, createRecorder.Body.String())
+	}
+	response := decodeTemplateResponse(t, createRecorder.Body.Bytes())
+
+	soulRecorder := httptest.NewRecorder()
+	soulRequest := httptest.NewRequest(http.MethodGet, "/api/admin/templates/"+response.Template.ID+"/soul", nil)
+	soulRequest.AddCookie(adminCookie)
+	router.ServeHTTP(soulRecorder, soulRequest)
+	if soulRecorder.Code != http.StatusOK || !bytes.Contains(soulRecorder.Body.Bytes(), []byte("Original soul.")) {
+		t.Fatalf("soul status/body = %d / %s", soulRecorder.Code, soulRecorder.Body.String())
+	}
+
+	skillsRecorder := httptest.NewRecorder()
+	skillsRequest := httptest.NewRequest(http.MethodGet, "/api/admin/templates/"+response.Template.ID+"/skills", nil)
+	skillsRequest.AddCookie(adminCookie)
+	router.ServeHTTP(skillsRecorder, skillsRequest)
+	if skillsRecorder.Code != http.StatusOK || !bytes.Contains(skillsRecorder.Body.Bytes(), []byte(`"skillName":"faq"`)) {
+		t.Fatalf("skills status/body = %d / %s", skillsRecorder.Code, skillsRecorder.Body.String())
+	}
+}
+
+func TestAdminCreateTemplateRejectsInvalidSkillArchive(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	archive := makeSkillArchive(t, map[string]string{
+		"notes.md": "missing skill",
+	})
+
+	createRecorder := doMultipartTemplateCreate(t, router, adminCookie, "Broken Agent", "broken", "Original soul.", "Original user.", []multipartSkillFile{
+		{name: "broken.zip", content: archive},
+	})
+	if createRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("create status = %d, body = %s", createRecorder.Code, createRecorder.Body.String())
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/admin/templates", nil)
+	listRequest.AddCookie(adminCookie)
+	router.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRecorder.Code, listRecorder.Body.String())
+	}
+	if bytes.Contains(listRecorder.Body.Bytes(), []byte("Broken Agent")) {
+		t.Fatalf("broken template leaked into list: %s", listRecorder.Body.String())
+	}
+}
+
+func TestAdminCanGetTemplateDetailWithoutPathFields(t *testing.T) {
+	router, manager := newTemplateTestRouter(t)
+	adminCookie := sessionCookieFor(t, manager, auth.User{ID: "admin-1", Email: "admin@example.com", Role: auth.RoleAdmin})
+	templateID := createCompleteDraftViaHTTP(t, router, adminCookie)
+
+	detailRecorder := httptest.NewRecorder()
+	detailRequest := httptest.NewRequest(http.MethodGet, "/api/admin/templates/"+templateID, nil)
+	detailRequest.AddCookie(adminCookie)
+	router.ServeHTTP(detailRecorder, detailRequest)
+	if detailRecorder.Code != http.StatusOK {
+		t.Fatalf("admin detail status = %d, body = %s", detailRecorder.Code, detailRecorder.Body.String())
+	}
+	assertNoPathFields(t, detailRecorder.Body.Bytes())
+	if !bytes.Contains(detailRecorder.Body.Bytes(), []byte(templateID)) {
+		t.Fatalf("admin detail body %s does not include template %s", detailRecorder.Body.String(), templateID)
 	}
 }
 
@@ -299,17 +397,11 @@ func TestDeletingPublishedSkillReturnsNewDraft(t *testing.T) {
 
 func createCompleteDraftViaHTTP(t *testing.T, router http.Handler, adminCookie *http.Cookie) string {
 	t.Helper()
-	createRecorder := doJSON(t, router, http.MethodPost, "/api/admin/templates", `{"name":"Support Agent","description":""}`, adminCookie)
+	createRecorder := doMultipartTemplateCreate(t, router, adminCookie, "Support Agent", "", "Original soul.", "Original user.", nil)
 	if createRecorder.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", createRecorder.Code, createRecorder.Body.String())
 	}
 	templateID := decodeTemplateResponse(t, createRecorder.Body.Bytes()).Template.ID
-	if recorder := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+templateID+"/soul", `{"content":"Original soul."}`, adminCookie); recorder.Code != http.StatusOK {
-		t.Fatalf("put soul status = %d, body = %s", recorder.Code, recorder.Body.String())
-	}
-	if recorder := doJSON(t, router, http.MethodPut, "/api/admin/templates/"+templateID+"/user", `{"content":"Original user."}`, adminCookie); recorder.Code != http.StatusOK {
-		t.Fatalf("put user status = %d, body = %s", recorder.Code, recorder.Body.String())
-	}
 	return templateID
 }
 
@@ -432,4 +524,76 @@ func assertNoPathFields(t *testing.T, body []byte) {
 			t.Fatalf("response leaked %q: %s", forbidden, body)
 		}
 	}
+}
+
+type multipartSkillFile struct {
+	name    string
+	content []byte
+}
+
+func doMultipartTemplateCreate(t *testing.T, router http.Handler, cookie *http.Cookie, name, description, soulContent, userContent string, skills []multipartSkillFile) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for field, value := range map[string]string{
+		"name":        name,
+		"description": description,
+		"soulContent": soulContent,
+		"userContent": userContent,
+	} {
+		if err := writer.WriteField(field, value); err != nil {
+			t.Fatalf("WriteField(%s): %v", field, err)
+		}
+	}
+	for _, skill := range skills {
+		part, err := writer.CreateFormFile("skillZips", skill.name)
+		if err != nil {
+			t.Fatalf("CreateFormFile(%s): %v", skill.name, err)
+		}
+		if _, err := part.Write(skill.content); err != nil {
+			t.Fatalf("Write skill file %s: %v", skill.name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close multipart writer: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/templates", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	if cookie != nil {
+		request.AddCookie(cookie)
+	}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func makeSkillArchive(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "skill.zip")
+	file, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatalf("Create archive: %v", err)
+	}
+	writer := zip.NewWriter(file)
+	for name, content := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create zip entry %s: %v", name, err)
+		}
+		if _, err := io.Copy(entry, bytes.NewBufferString(content)); err != nil {
+			t.Fatalf("Write zip entry %s: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close zip writer: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close archive file: %v", err)
+	}
+	data, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatalf("Read archive: %v", err)
+	}
+	return data
 }

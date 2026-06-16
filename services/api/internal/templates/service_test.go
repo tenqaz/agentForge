@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -152,6 +154,87 @@ func TestServiceRejectsInvalidSkillName(t *testing.T) {
 	}
 }
 
+func TestServiceCreateWithContentsWritesSoulUserAndImportsSkillArchives(t *testing.T) {
+	service, dataDir := newTestService(t)
+	ctx := context.Background()
+
+	template, err := service.CreateWithContents(ctx, CreateTemplateParams{
+		CreatedBy:   "admin-1",
+		Name:        "Support Agent",
+		Description: "answers customers",
+		SoulContent: "# Soul\nCalm and direct.",
+		UserContent: "# User\nKeep answers short.",
+		SkillArchives: []SkillArchive{
+			{
+				Filename: "faq.zip",
+				Content:  createSkillArchive(t, map[string]string{"SKILL.md": "---\nname: FAQ\ndescription: Frequently asked questions\n---\n# FAQ\n"}),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWithContents returned error: %v", err)
+	}
+
+	soul, err := service.Soul(ctx, template.ID)
+	if err != nil {
+		t.Fatalf("Soul returned error: %v", err)
+	}
+	if soul != "# Soul\nCalm and direct." {
+		t.Fatalf("soul = %q", soul)
+	}
+	userContent, err := service.User(ctx, template.ID)
+	if err != nil {
+		t.Fatalf("User returned error: %v", err)
+	}
+	if userContent != "# User\nKeep answers short." {
+		t.Fatalf("userContent = %q", userContent)
+	}
+	skills, err := service.ListSkills(ctx, template.ID)
+	if err != nil {
+		t.Fatalf("ListSkills returned error: %v", err)
+	}
+	if len(skills) != 1 || skills[0].SkillName != "faq" {
+		t.Fatalf("skills = %#v", skills)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "templates", template.ID, "versions", "1", "skills", "faq", "SKILL.md")); err != nil {
+		t.Fatalf("skill file stat error: %v", err)
+	}
+}
+
+func TestServiceCreateWithContentsRollsBackOnInvalidSkillArchive(t *testing.T) {
+	service, dataDir := newTestService(t)
+	ctx := context.Background()
+
+	_, err := service.CreateWithContents(ctx, CreateTemplateParams{
+		CreatedBy:   "admin-1",
+		Name:        "Broken Agent",
+		Description: "broken",
+		SoulContent: "# Soul\nBroken.",
+		UserContent: "# User\nBroken.",
+		SkillArchives: []SkillArchive{
+			{
+				Filename: "broken.zip",
+				Content:  createSkillArchive(t, map[string]string{"notes.md": "missing skill"}),
+			},
+		},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("CreateWithContents error = %v, want ErrInvalidInput", err)
+	}
+
+	templatesDir := filepath.Join(dataDir, "templates")
+	entries, readErr := os.ReadDir(templatesDir)
+	if errors.Is(readErr, os.ErrNotExist) {
+		return
+	}
+	if readErr != nil {
+		t.Fatalf("ReadDir returned error: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("templates dir entries = %d, want 0", len(entries))
+	}
+}
+
 func TestRepositoryCreateSkillMapsUniqueConstraintToConflict(t *testing.T) {
 	database := newTemplatesTestDB(t)
 	repository := NewRepository(database)
@@ -285,4 +368,23 @@ func newTemplatesTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("create tables: %v", err)
 	}
 	return database
+}
+
+func createSkillArchive(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for name, content := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create zip entry %s: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write zip entry %s: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close zip writer: %v", err)
+	}
+	return buffer.Bytes()
 }

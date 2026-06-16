@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { useApiClient } from "@/components/app-shell";
 import {
+  archiveAdminTemplate,
   apiErrorMessage,
   publishTemplate,
   saveTemplateSoul,
@@ -34,6 +35,7 @@ export default function TemplateEditor({
   const [userContent, setUserContent] = useState(initialUserContent);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<string>("");
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   function applyTemplate(nextTemplate: Template, nextSoul = soul, nextUser = userContent) {
     setTemplate(nextTemplate);
@@ -101,6 +103,18 @@ export default function TemplateEditor({
     applyTemplate(response.data.template);
   }
 
+  async function handleArchive() {
+    setPending("archive");
+    setError("");
+    const response = await archiveAdminTemplate(apiClient, template.id);
+    setPending("");
+    if (!response.ok) {
+      setError(apiErrorMessage(response.error.code, response.error.message));
+      return;
+    }
+    router.replace("/admin/templates");
+  }
+
   return (
     <div className="grid gap-6">
       <div className="panel rounded-[1.75rem] p-6">
@@ -111,20 +125,51 @@ export default function TemplateEditor({
               Metadata and publication
             </h2>
           </div>
-          <button
-            className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 hover:border-stone-900 hover:bg-stone-900 hover:text-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={pending === "publication"}
-            onClick={() => void handlePublishToggle()}
-            type="button"
-          >
-            {template.status === "published"
-              ? pending === "publication"
-                ? "Unpublishing..."
-                : "Unpublish"
-              : pending === "publication"
-                ? "Publishing..."
-                : "Publish"}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 hover:border-stone-900 hover:bg-stone-900 hover:text-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={pending === "publication" || pending === "archive"}
+              onClick={() => void handlePublishToggle()}
+              type="button"
+            >
+              {template.status === "published"
+                ? pending === "publication"
+                  ? "Unpublishing..."
+                  : "Unpublish"
+                : pending === "publication"
+                  ? "Publishing..."
+                  : "Publish"}
+            </button>
+            {confirmArchive ? (
+              <>
+                <button
+                  className="rounded-full border border-red-300 bg-red-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={pending === "archive"}
+                  onClick={() => void handleArchive()}
+                  type="button"
+                >
+                  {pending === "archive" ? "Deleting..." : "Confirm Delete"}
+                </button>
+                <button
+                  className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={pending === "archive"}
+                  onClick={() => setConfirmArchive(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                className="rounded-full border border-red-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={pending === "publication" || pending === "archive"}
+                onClick={() => setConfirmArchive(true)}
+                type="button"
+              >
+                Delete Template
+              </button>
+            )}
+          </div>
         </div>
         <div className="mt-5 grid gap-4">
           <label className="grid gap-2 text-sm font-medium text-stone-700">

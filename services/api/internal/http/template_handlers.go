@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 
 	"agentforge.local/services/api/internal/auth"
@@ -22,6 +23,7 @@ func (h *TemplateHandlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/templates", h.ListPublished)
 	mux.HandleFunc("GET /api/templates/{id}", h.GetPublished)
 	mux.HandleFunc("GET /api/admin/templates", h.ListAdmin)
+	mux.HandleFunc("GET /api/admin/templates/{id}", h.GetAdmin)
 	mux.HandleFunc("POST /api/admin/templates", h.Create)
 	mux.HandleFunc("PUT /api/admin/templates/{id}", h.UpdateMetadata)
 	mux.HandleFunc("DELETE /api/admin/templates/{id}", h.Archive)
@@ -71,19 +73,36 @@ func (h *TemplateHandlers) ListAdmin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
 }
 
+func (h *TemplateHandlers) GetAdmin(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireAdminUser(w, r); !ok {
+		return
+	}
+	template, err := h.service.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeTemplateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+}
+
 func (h *TemplateHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAdminUser(w, r)
 	if !ok {
 		return
 	}
-	var request struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	if !decodeRequest(w, r, &request) {
+	request, err := decodeTemplateCreateRequest(r)
+	if err != nil {
+		writeTemplateError(w, err)
 		return
 	}
-	template, err := h.service.Create(r.Context(), user.ID, request.Name, request.Description)
+	template, err := h.service.CreateWithContents(r.Context(), templates.CreateTemplateParams{
+		CreatedBy:     user.ID,
+		Name:          request.Name,
+		Description:   request.Description,
+		SoulContent:   request.SoulContent,
+		UserContent:   request.UserContent,
+		SkillArchives: request.SkillArchives,
+	})
 	if err != nil {
 		writeTemplateError(w, err)
 		return
@@ -268,6 +287,14 @@ type contentResponse struct {
 	Content string `json:"content"`
 }
 
+type createTemplateRequest struct {
+	Name          string
+	Description   string
+	SoulContent   string
+	UserContent   string
+	SkillArchives []templates.SkillArchive
+}
+
 type skillResponse struct {
 	Skill   skillDTO `json:"skill"`
 	Content string   `json:"content,omitempty"`
@@ -371,4 +398,47 @@ func writeTemplateError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error")
 	}
+}
+
+func decodeTemplateCreateRequest(r *http.Request) (createTemplateRequest, error) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		return createTemplateRequest{}, templates.ErrInvalidInput
+	}
+	request := createTemplateRequest{
+		Name:        r.FormValue("name"),
+		Description: r.FormValue("description"),
+		SoulContent: r.FormValue("soulContent"),
+		UserContent: r.FormValue("userContent"),
+	}
+	if r.MultipartForm == nil {
+		return request, nil
+	}
+	files := r.MultipartForm.File["skillZips"]
+	for _, header := range files {
+		archive, err := readMultipartSkillArchive(header)
+		if err != nil {
+			return createTemplateRequest{}, err
+		}
+		request.SkillArchives = append(request.SkillArchives, archive)
+	}
+	return request, nil
+}
+
+func readMultipartSkillArchive(header *multipart.FileHeader) (templates.SkillArchive, error) {
+	if header == nil {
+		return templates.SkillArchive{}, templates.ErrInvalidInput
+	}
+	file, err := header.Open()
+	if err != nil {
+		return templates.SkillArchive{}, err
+	}
+	defer file.Close()
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return templates.SkillArchive{}, err
+	}
+	return templates.SkillArchive{
+		Filename: header.Filename,
+		Content:  content,
+	}, nil
 }

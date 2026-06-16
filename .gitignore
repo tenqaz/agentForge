@@ -3,3 +3,6 @@
 var/
 services/api/.env
 web/.env.local
+.codegraph
+.claude
+docs

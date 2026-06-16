@@ -13,6 +13,9 @@ export default function NewAdminTemplatePage() {
   const { loading, user } = useSessionState();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [soulContent, setSoulContent] = useState("");
+  const [userContent, setUserContent] = useState("");
+  const [skillZips, setSkillZips] = useState<File[]>([]);
   const [pending, setPending] = useState(false);
   const [errorStatus, setErrorStatus] = useState<number>();
   const [error, setError] = useState("");
@@ -33,7 +36,15 @@ export default function NewAdminTemplatePage() {
   async function handleCreate() {
     setPending(true);
     setError("");
-    const response = await createAdminTemplate(apiClient, name, description);
+    const formData = new FormData();
+    formData.set("name", name);
+    formData.set("description", description);
+    formData.set("soulContent", soulContent);
+    formData.set("userContent", userContent);
+    for (const skillZip of skillZips) {
+      formData.append("skillZips", skillZip, skillZip.name);
+    }
+    const response = await createAdminTemplate(apiClient, formData);
     setPending(false);
     if (!response.ok) {
       setErrorStatus(response.status);
@@ -67,12 +78,43 @@ export default function NewAdminTemplatePage() {
               value={description}
             />
           </label>
+          <label className="grid gap-2 text-sm font-medium text-stone-700">
+            SOUL.md
+            <textarea
+              className="min-h-48 rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 font-mono text-sm text-stone-950 shadow-sm"
+              onChange={(event) => setSoulContent(event.target.value)}
+              value={soulContent}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium text-stone-700">
+            USER.md
+            <textarea
+              className="min-h-40 rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 font-mono text-sm text-stone-950 shadow-sm"
+              onChange={(event) => setUserContent(event.target.value)}
+              value={userContent}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium text-stone-700">
+            Skill ZIPs
+            <input
+              accept=".zip,application/zip"
+              className="rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-sm text-stone-950 shadow-sm file:mr-4 file:rounded-full file:border-0 file:bg-stone-950 file:px-4 file:py-2 file:text-xs file:font-semibold file:uppercase file:tracking-[0.16em] file:text-stone-50"
+              multiple
+              onChange={(event) => setSkillZips(Array.from(event.target.files ?? []))}
+              type="file"
+            />
+          </label>
+          {skillZips.length > 0 ? (
+            <div className="rounded-[1.25rem] border border-stone-900/10 bg-stone-50/70 px-4 py-3 text-sm text-stone-700">
+              {skillZips.map((file) => file.name).join(", ")}
+            </div>
+          ) : null}
           {error ? (
             <ApiErrorState message={error} status={errorStatus} />
           ) : null}
           <button
             className="w-fit rounded-full bg-stone-950 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={pending || !name.trim()}
+            disabled={pending || !name.trim() || !soulContent.trim()}
             onClick={() => void handleCreate()}
             type="button"
           >

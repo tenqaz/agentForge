@@ -52,18 +52,22 @@ function toQueryString(
 
 function isJsonBody(body: unknown): body is ApiJson {
   return (
-    body === null ||
-    typeof body === "string" ||
-    typeof body === "number" ||
-    typeof body === "boolean" ||
-    Array.isArray(body) ||
-    (typeof body === "object" && body !== null)
+    !(typeof FormData !== "undefined" && body instanceof FormData) &&
+    (
+      body === null ||
+      typeof body === "string" ||
+      typeof body === "number" ||
+      typeof body === "boolean" ||
+      Array.isArray(body) ||
+      (typeof body === "object" && body !== null)
+    )
   );
 }
 
-function mergeHeaders(...sources: HeadersInit[]): Headers {
+function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
   const headers = new Headers();
   for (const source of sources) {
+    if (!source) continue;
     new Headers(source).forEach((value, key) => headers.set(key, value));
   }
   return headers;
@@ -215,15 +219,22 @@ export async function listAdminTemplates(client: ApiClient) {
   return client.get<TemplatesResponse>("/api/admin/templates");
 }
 
+export async function getAdminTemplate(client: ApiClient, templateId: string) {
+  return client.get<TemplateResponse>(`/api/admin/templates/${templateId}`);
+}
+
 export async function createAdminTemplate(
   client: ApiClient,
-  name: string,
-  description: string,
+  payload: FormData,
 ) {
-  return client.post<TemplateResponse, { name: string; description: string }>(
+  return client.post<TemplateResponse, FormData>(
     "/api/admin/templates",
-    { name, description },
+    payload,
   );
+}
+
+export async function archiveAdminTemplate(client: ApiClient, templateId: string) {
+  return client.delete<void>(`/api/admin/templates/${templateId}`);
 }
 
 export async function updateAdminTemplate(
