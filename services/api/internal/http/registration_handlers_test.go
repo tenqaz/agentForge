@@ -97,6 +97,28 @@ func TestRegistrationRouteRejectsWeakPassword(t *testing.T) {
 	}
 }
 
+func TestRegistrationRouteRejectsInvalidEmail(t *testing.T) {
+	database := newHTTPTestDB(t)
+	router := NewRouter(Dependencies{
+		AuthRepository: auth.NewRepository(database),
+		SessionManager: auth.NewSessionManager("test-secret", false),
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/users", bytes.NewBufferString(`{"email":"not-an-email","password":"abc12345"}`))
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid email status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder.Body.String() != "{\"error\":\"invalid_email\"}\n" {
+		t.Fatalf("invalid email body = %q", recorder.Body.String())
+	}
+	if len(recorder.Result().Cookies()) != 0 {
+		t.Fatalf("invalid email set cookies: %#v", recorder.Result().Cookies())
+	}
+}
+
 func TestRegistrationRouteRejectsInvalidAndTrailingJSON(t *testing.T) {
 	database := newHTTPTestDB(t)
 	router := NewRouter(Dependencies{
@@ -125,5 +147,19 @@ func TestRegistrationRouteRejectsInvalidAndTrailingJSON(t *testing.T) {
 	}
 	if len(recorder.Result().Cookies()) != 0 {
 		t.Fatalf("trailing JSON set cookies: %#v", recorder.Result().Cookies())
+	}
+}
+
+func TestRouterWithNilAuthRepositoryDoesNotMountRegistrationRoute(t *testing.T) {
+	router := NewRouter(Dependencies{
+		SessionManager: auth.NewSessionManager("test-secret", false),
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/users", bytes.NewBufferString(`{"email":"user@example.com","password":"abc12345"}`))
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("nil auth registration status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 }

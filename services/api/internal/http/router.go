@@ -32,8 +32,10 @@ type Dependencies struct {
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	NewHealthHandlers().Register(mux)
-	registrationHandlers := NewRegistrationHandlers(deps.AuthRepository)
-	mux.HandleFunc("POST /api/users", registrationHandlers.Create)
+	if deps.AuthRepository != nil {
+		registrationHandlers := NewRegistrationHandlers(deps.AuthRepository)
+		mux.HandleFunc("POST /api/users", registrationHandlers.Create)
+	}
 	sessionHandlers := NewSessionHandlers(deps.AuthRepository, deps.SessionManager)
 	mux.HandleFunc("POST /api/sessions", sessionHandlers.Create)
 	mux.HandleFunc("GET /api/session", sessionHandlers.Current)
