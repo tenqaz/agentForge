@@ -261,6 +261,53 @@ func TestFindUserByEmail_FallsBackToNormalizedMatchDeterministically(t *testing.
 	}
 }
 
+func TestFindUserByEmail_FindsLegacyOnlyStoredEmailViaNormalizedInput(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ('legacy-user', ' USER@Example.com ', ?, 'user');
+	`, hash)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	repo := NewRepository(database)
+	user, err := repo.FindUserByEmail(context.Background(), "user@example.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail returned error: %v", err)
+	}
+	if user.ID != "legacy-user" || user.Email != " USER@Example.com " || user.Role != RoleUser {
+		t.Fatalf("unexpected legacy-match user: %#v", user)
+	}
+}
+
+func TestFindUserByEmail_RejectsAmbiguousLegacyNormalizedDuplicates(t *testing.T) {
+	database := newAuthTestDB(t)
+	hash, err := HashPassword("abc12345")
+	if err != nil {
+		t.Fatalf("HashPassword returned error: %v", err)
+	}
+	_, err = database.Exec(`
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES
+			('legacy-user-1', ' USER@Example.com ', ?, 'user'),
+			('legacy-user-2', 'user@example.com  ', ?, 'user');
+	`, hash, hash)
+	if err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	repo := NewRepository(database)
+	_, err = repo.FindUserByEmail(context.Background(), "user@example.com")
+	if !errors.Is(err, ErrEmailLookupAmbiguous) {
+		t.Fatalf("FindUserByEmail error = %v, want ErrEmailLookupAmbiguous", err)
+	}
+}
+
 func TestSessionManagerCreatesParsesAndClearsSignedCookie(t *testing.T) {
 	manager := NewSessionManager("test-secret", true)
 	user := User{ID: "user-1", Email: "user@example.com", Role: RoleUser}

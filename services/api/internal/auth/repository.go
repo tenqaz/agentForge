@@ -24,6 +24,7 @@ var ErrUserNotFound = errors.New("user not found")
 var ErrInvalidEmail = errors.New("invalid email")
 var ErrInvalidPassword = errors.New("invalid password")
 var ErrEmailAlreadyExists = errors.New("email already exists")
+var ErrEmailLookupAmbiguous = errors.New("email lookup ambiguous")
 
 type CreateUserParams struct {
 	Email    string
@@ -96,25 +97,49 @@ func (r *Repository) FindUserByEmail(ctx context.Context, email string) (User, e
 	}
 
 	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
-	if normalizedEmail == email {
-		if errors.Is(err, sql.ErrNoRows) {
-			return User{}, ErrUserNotFound
+	if normalizedEmail != email {
+		err = r.database.QueryRowContext(ctx, `
+			SELECT id, email, role
+			FROM users
+			WHERE email = ?;
+		`, normalizedEmail).Scan(&user.ID, &user.Email, &user.Role)
+		if err == nil {
+			return user, nil
 		}
-		return User{}, err
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return User{}, err
+		}
 	}
 
-	err = r.database.QueryRowContext(ctx, `
+	rows, err := r.database.QueryContext(ctx, `
 		SELECT id, email, role
 		FROM users
-		WHERE email = ?;
-	`, normalizedEmail).Scan(&user.ID, &user.Email, &user.Role)
-	if errors.Is(err, sql.ErrNoRows) {
-		return User{}, ErrUserNotFound
-	}
+		WHERE lower(trim(email)) = ?
+		ORDER BY id ASC;
+	`, normalizedEmail)
 	if err != nil {
 		return User{}, err
 	}
-	return user, nil
+	defer rows.Close()
+
+	var matches []User
+	for rows.Next() {
+		var match User
+		if err := rows.Scan(&match.ID, &match.Email, &match.Role); err != nil {
+			return User{}, err
+		}
+		matches = append(matches, match)
+		if len(matches) > 1 {
+			return User{}, ErrEmailLookupAmbiguous
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return User{}, err
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return User{}, ErrUserNotFound
 }
 
 func (r *Repository) FindUserByID(ctx context.Context, userID string) (User, error) {
