@@ -89,6 +89,73 @@ func TestRepositoryFindsUsersByEmailWithoutPasswordHash(t *testing.T) {
 	}
 }
 
+func TestCreateUser_NormalizesEmailAndHashesPassword(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	user, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "  USER@Example.com ",
+		Password: "abc12345",
+		Role:     RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser returned error: %v", err)
+	}
+	if user.Email != "user@example.com" || user.Role != RoleUser {
+		t.Fatalf("unexpected user: %#v", user)
+	}
+	if user.PasswordHash != "" {
+		t.Fatalf("CreateUser exposed password hash: %#v", user)
+	}
+
+	hash, err := repo.PasswordHashForUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("PasswordHashForUser returned error: %v", err)
+	}
+	if !CheckPassword(hash, "abc12345") {
+		t.Fatal("stored password hash does not verify")
+	}
+}
+
+func TestCreateUser_RejectsInvalidEmailWeakPasswordAndDuplicateEmail(t *testing.T) {
+	database := newAuthTestDB(t)
+	repo := NewRepository(database)
+
+	if _, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "bad-email",
+		Password: "abc12345",
+		Role:     RoleUser,
+	}); !errors.Is(err, ErrInvalidEmail) {
+		t.Fatalf("invalid email error = %v, want ErrInvalidEmail", err)
+	}
+
+	if _, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "password",
+		Role:     RoleUser,
+	}); !errors.Is(err, ErrInvalidPassword) {
+		t.Fatalf("weak password error = %v, want ErrInvalidPassword", err)
+	}
+
+	_, err := repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "user@example.com",
+		Password: "abc12345",
+		Role:     RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("first CreateUser returned error: %v", err)
+	}
+
+	_, err = repo.CreateUser(context.Background(), CreateUserParams{
+		Email:    "USER@example.com",
+		Password: "xyz12345",
+		Role:     RoleUser,
+	})
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("duplicate email error = %v, want ErrEmailAlreadyExists", err)
+	}
+}
+
 func TestSessionManagerCreatesParsesAndClearsSignedCookie(t *testing.T) {
 	manager := NewSessionManager("test-secret", true)
 	user := User{ID: "user-1", Email: "user@example.com", Role: RoleUser}
@@ -208,11 +275,11 @@ func TestEnsureDefaultAdmin_FirstTime(t *testing.T) {
 		t.Fatalf("EnsureDefaultAdmin returned error: %v", err)
 	}
 
-	user, err := repo.FindUserByEmail(context.Background(), "admin")
+	user, err := repo.FindUserByEmail(context.Background(), "admin@123.com")
 	if err != nil {
 		t.Fatalf("FindUserByEmail returned error: %v", err)
 	}
-	if user.ID != "admin" || user.Email != "admin" || user.Role != RoleAdmin {
+	if user.ID != "admin" || user.Email != "admin@123.com" || user.Role != RoleAdmin {
 		t.Fatalf("unexpected user: %#v", user)
 	}
 
@@ -237,7 +304,7 @@ func TestEnsureDefaultAdmin_Idempotent(t *testing.T) {
 	}
 
 	var count int
-	err := database.QueryRow(`SELECT COUNT(*) FROM users WHERE email = 'admin'`).Scan(&count)
+	err := database.QueryRow(`SELECT COUNT(*) FROM users WHERE email = 'admin@123.com'`).Scan(&count)
 	if err != nil {
 		t.Fatalf("count query failed: %v", err)
 	}
@@ -256,7 +323,7 @@ func TestEnsureDefaultAdmin_AlreadyExists(t *testing.T) {
 	}
 	_, err = database.Exec(`
 		INSERT INTO users (id, email, password_hash, role)
-		VALUES ('custom-admin', 'admin', ?, 'admin');
+		VALUES ('custom-admin', 'admin@123.com', ?, 'admin');
 	`, customHash)
 	if err != nil {
 		t.Fatalf("insert custom admin: %v", err)

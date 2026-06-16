@@ -5,7 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 type Role string
@@ -16,6 +21,15 @@ const (
 )
 
 var ErrUserNotFound = errors.New("user not found")
+var ErrInvalidEmail = errors.New("invalid email")
+var ErrInvalidPassword = errors.New("invalid password")
+var ErrEmailAlreadyExists = errors.New("email already exists")
+
+type CreateUserParams struct {
+	Email    string
+	Password string
+	Role     Role
+}
 
 type User struct {
 	ID           string `json:"id"`
@@ -30,6 +44,44 @@ type Repository struct {
 
 func NewRepository(database *sql.DB) *Repository {
 	return &Repository{database: database}
+}
+
+func (r *Repository) CreateUser(ctx context.Context, params CreateUserParams) (User, error) {
+	email, err := normalizeEmail(params.Email)
+	if err != nil {
+		return User{}, err
+	}
+	if err := validatePassword(params.Password); err != nil {
+		return User{}, err
+	}
+
+	role := params.Role
+	if role == "" {
+		role = RoleUser
+	}
+
+	hash, err := HashPassword(params.Password)
+	if err != nil {
+		return User{}, fmt.Errorf("hash password: %w", err)
+	}
+
+	user := User{
+		ID:    uuid.NewString(),
+		Email: email,
+		Role:  role,
+	}
+
+	_, err = r.database.ExecContext(ctx, `
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES (?, ?, ?, ?);
+	`, user.ID, user.Email, hash, user.Role)
+	if isUniqueConstraint(err) {
+		return User{}, ErrEmailAlreadyExists
+	}
+	if err != nil {
+		return User{}, err
+	}
+	return user, nil
 }
 
 func (r *Repository) FindUserByEmail(ctx context.Context, email string) (User, error) {
@@ -81,7 +133,7 @@ func (r *Repository) PasswordHashForUser(ctx context.Context, userID string) (st
 }
 
 func (r *Repository) EnsureDefaultAdmin(ctx context.Context) error {
-	_, err := r.FindUserByEmail(ctx, "admin")
+	_, err := r.FindUserByEmail(ctx, "admin@123.com")
 	if err == nil {
 		return nil
 	}
@@ -97,7 +149,7 @@ func (r *Repository) EnsureDefaultAdmin(ctx context.Context) error {
 	_, err = r.database.ExecContext(ctx, `
 		INSERT INTO users (id, email, password_hash, role)
 		VALUES (?, ?, ?, ?);
-	`, "admin", "admin", hash, RoleAdmin)
+	`, "admin", "admin@123.com", hash, RoleAdmin)
 
 	if isUniqueConstraint(err) {
 		return nil
@@ -110,4 +162,37 @@ func isUniqueConstraint(err error) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "unique")
+}
+
+func normalizeEmail(email string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" {
+		return "", ErrInvalidEmail
+	}
+	parsed, err := mail.ParseAddress(normalized)
+	if err != nil || parsed.Address != normalized {
+		return "", ErrInvalidEmail
+	}
+	return normalized, nil
+}
+
+func validatePassword(password string) error {
+	if utf8.RuneCountInString(password) < 8 {
+		return ErrInvalidPassword
+	}
+
+	var hasLetter bool
+	var hasDigit bool
+	for _, r := range password {
+		if unicode.IsLetter(r) {
+			hasLetter = true
+		}
+		if unicode.IsDigit(r) {
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return ErrInvalidPassword
+	}
+	return nil
 }
