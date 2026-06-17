@@ -1,69 +1,70 @@
-# Gin Migration Design
+# Gin 迁移设计
 
-Date: 2026-06-17
-Topic: Migrate `services/api` HTTP layer from `net/http` to Gin
+日期：2026-06-17
+主题：将 `services/api` 的 HTTP 层从 `net/http` 迁移到 Gin
 
-## Goal
+## 目标
 
-Migrate the backend HTTP stack in `services/api` from the current `net/http` + `ServeMux` implementation to Gin.
+将 `services/api` 中当前基于 `net/http` + `ServeMux` 的后端 HTTP 栈迁移为 Gin。
 
-Primary goals:
+核心目标：
 
-- Adopt Gin's `Context`, router grouping, and middleware model across the entire HTTP layer.
-- Use the migration to clean up handler structure, request binding, and error handling.
-- Preserve application behavior and user-facing functionality, while allowing coordinated API response adjustments when they improve consistency.
+- 在整个 HTTP 层统一采用 Gin 的 `Context`、路由分组和中间件模型。
+- 借助这次迁移整理 handler 结构、请求绑定和错误处理。
+- 保持应用行为和用户功能不变，同时允许为适配 Gin 对相关层做联动重构和 API 调整。
 
-Non-goals:
+非目标：
 
-- Rewriting service, repository, database, runtime, or worker layers to depend on Gin.
-- Changing product workflows or adding new end-user features.
-- Broad refactoring outside the HTTP boundary that does not directly support this migration.
+- 不改变产品流程，也不新增终端用户功能。
+- 不做会改变业务语义的重构。
 
-## Current State
+## 当前状态
 
-The backend entrypoint in `services/api/cmd/agentforge-api/main.go` builds dependencies, creates an HTTP router through `internal/http.NewRouter`, and serves it through `http.Server`.
+后端入口位于 `services/api/cmd/agentforge-api/main.go`，负责构建依赖、通过 `internal/http.NewRouter` 创建 HTTP 路由，并交给 `http.Server` 提供服务。
 
-The current HTTP layer:
+当前 HTTP 层特征如下：
 
-- Uses `http.NewServeMux()` and method-aware patterns such as `GET /api/health`.
-- Registers routes from multiple handler groups: health, registration, session, templates, agents, and weixin channels.
-- Uses plain `http.Handler` middleware for session resolution, panic recovery, and request ID injection.
-- Implements JSON decoding manually in several handlers.
-- Uses a shared JSON/error response helper pattern with error payloads shaped as `{ error, message?, requestId? }`.
+- 使用 `http.NewServeMux()`，并采用 `GET /api/health` 这类带方法信息的模式。
+- 通过多个 handler 组注册路由：health、registration、session、templates、agents 和 weixin channels。
+- 通过原生 `http.Handler` 中间件处理 session 解析、panic recover 和 request ID 注入。
+- 多个 handler 手工完成 JSON 解码。
+- 通过共享的 JSON/错误响应辅助函数输出 `{ error, message?, requestId? }` 结构的错误体。
 
-The frontend depends on:
+前端当前依赖：
 
-- Stable API paths under `/api/...`.
-- Existing session, template, agent, runtime job, and weixin flows.
-- Error-code-based handling in `web/lib/api/client.ts`.
-- Playwright and API client tests that encode current path, method, and response expectations.
+- `/api/...` 下的稳定 API 路径。
+- 现有的 session、template、agent、runtime job 和 weixin 流程。
+- `web/lib/api/client.ts` 中基于错误码的处理逻辑。
+- 在 Playwright 和 API client 测试中写死的路径、方法和响应预期。
 
-## Design Principles
+## 设计原则
 
-1. Keep Gin confined to the HTTP adapter layer.
-2. Preserve service-layer signatures that accept `context.Context`.
-3. Prefer route and middleware consistency over minimal code churn.
-4. Avoid gratuitous API redesign; only change HTTP behavior when it improves consistency and is practical to update in the frontend.
-5. Keep route paths stable unless a change materially improves structure.
+1. 允许为适配 Gin 跨层重构，但重构必须直接服务于迁移目标，而不是顺带做无关架构翻修。
+2. 优先保证路由、中间件、上下文传递和错误处理模型的一致性，而不是最小改动量。
+3. 在不影响业务语义的前提下，service、repository、database、runtime、worker 都可以按需调整。
+4. 避免无意义的 API 重设计；只有在能提升一致性且前端可同步调整时，才允许修改 HTTP 行为。
+5. 除非路径调整能明显改善结构，否则保持现有路由路径不变。
+6. 即使允许跨层改造，也应尽量保持清晰边界，避免把 Gin 细节无序扩散到所有实现中。
 
-## Target Architecture
+## 目标架构
 
-### HTTP Entry
+### HTTP 入口
 
-`internal/http.NewRouter` will return a Gin engine instead of a generic `http.Handler`. The server bootstrap in `main.go` will continue to use `http.Server`, with the Gin engine set as the server handler.
+`internal/http.NewRouter` 将返回 Gin engine，而不再返回泛化的 `http.Handler`。`main.go` 中的服务启动逻辑仍然继续使用 `http.Server`，只是将 Gin engine 作为其 handler。
 
-This preserves:
+这样可以保留：
 
-- Existing startup flow
-- Existing graceful shutdown behavior
-- Existing dependency construction
+- 现有启动流程
+- 现有优雅关闭逻辑
+- 现有依赖组装方式
 
-### Layering Boundary
+### 分层边界
 
-Gin will be used only in `services/api/internal/http`.
+Gin 可以进入整个 `services/api`，但任何被 Gin 影响到的改动都必须保持功能和业务语义不变。
 
-Business and persistence layers will remain unchanged:
+以下层可以根据需要进行适配性重构：
 
+- `internal/http`
 - `internal/auth`
 - `internal/agents`
 - `internal/templates`
@@ -72,288 +73,291 @@ Business and persistence layers will remain unchanged:
 - `internal/runtime`
 - `internal/weixin`
 
-Handlers will continue to call these services with `c.Request.Context()` or a derived `context.Context` from Gin's request context.
+重构后，各层之间仍应尽量保持清晰边界；service/repository/database/runtime/worker 可以调整实现和协作方式，但不应把 Gin 类型向下泄漏到业务核心逻辑里。
 
-## Route Organization
+## 路由组织
 
-### Engine Setup
+### Engine 组装
 
-The Gin engine will be assembled centrally in `router.go`:
+Gin engine 将在 `router.go` 中集中组装：
 
-- Create the engine with explicit middleware configuration.
-- Install global middleware for request ID, panic recovery, logging-compatible metadata, and session hydration.
-- Mount `/api` route groups by domain.
+- 显式创建 engine 并配置中间件。
+- 安装全局中间件，用于 request ID、panic recover、日志相关元数据和 session 注水。
+- 按领域挂载 `/api` 路由分组。
+- 如有必要，可同步调整业务层初始化、上下文传递和辅助组件，以适配新的 HTTP 入口模型。
 
-### Route Groups
+### 路由分组
 
-Routes will be grouped by resource domain instead of individual `ServeMux` registration calls:
+路由将按资源域组织，而不再通过分散的 `ServeMux` 注册调用来装配：
 
 - `/api/health`
 - `/api/users`
-- `/api/sessions` and `/api/session`
+- `/api/sessions` 和 `/api/session`
 - `/api/templates`
 - `/api/admin/templates`
 - `/api/agents`
-- nested agent routes for runtime jobs and weixin channels
+- agent 之下的 runtime jobs 和 weixin channels 嵌套路由
 
-Each handler set will register against a `*gin.RouterGroup` or the engine directly, for example:
+每组 handler 将注册到 `*gin.RouterGroup` 或 engine 本身，例如：
 
 - `RegisterPublicRoutes`
 - `RegisterAdminTemplateRoutes`
 - `RegisterAgentRoutes`
 - `RegisterWeixinRoutes`
 
-Exact function naming can follow repository conventions, but the design requirement is to stop passing `*http.ServeMux` around and move all HTTP registration to Gin-native route groups.
+函数命名可以结合仓库现有风格微调，但设计要求是停止传递 `*http.ServeMux`，并将 HTTP 注册方式全面迁移为 Gin 原生路由分组。
 
-## Handler Model
+## Handler 模型
 
-### Signatures
+### 签名
 
-All HTTP handlers in `internal/http` will move from:
+`internal/http` 中的所有 HTTP handler 将从：
 
 - `func (h *XHandlers) Method(w http.ResponseWriter, r *http.Request)`
 
-to:
+改为：
 
 - `func (h *XHandlers) Method(c *gin.Context)`
 
-### Parameter Access
+### 参数访问
 
-All path parameter access will be moved from `r.PathValue(...)` to `c.Param(...)`.
+所有路径参数访问都将从 `r.PathValue(...)` 迁移为 `c.Param(...)`。
 
-### Request Binding
+### 请求绑定
 
-Manual JSON decoding will be replaced by shared Gin-aware request binding helpers.
+手写 JSON 解码将替换为共享的、面向 Gin 的请求绑定辅助层。
 
-Requirements for the binding layer:
+绑定层必须满足：
 
-- Consistent JSON error responses
-- Explicit handling for malformed JSON
-- Explicit handling for unexpected extra JSON content or unsupported body shapes when relevant
-- Reusable helper for request DTO decoding across handlers
+- 输出一致的 JSON 错误响应
+- 显式处理非法 JSON
+- 在相关场景中显式处理多余 JSON 内容或不支持的 body 结构
+- 为各 handler 提供可复用的请求 DTO 解码能力
 
-The helper may use Gin binding primitives internally, but it must preserve precise API behavior where existing tests rely on it. If the migration intentionally changes one of these semantics, the spec requires synchronizing backend tests, frontend client logic, and browser tests.
+该辅助层内部可以使用 Gin 的 binding 机制，但必须保留现有测试依赖的关键 API 行为。如果迁移中有意调整这些语义，则必须同步更新后端测试、前端 client 逻辑和浏览器测试。
 
-### Response Writing
+### 响应输出
 
-Handlers will stop writing JSON directly through `http.ResponseWriter` and instead use shared Gin response helpers.
+handler 不再直接通过 `http.ResponseWriter` 写 JSON，而是统一使用共享的 Gin 响应辅助函数。
 
-The response layer must standardize:
+响应层需要统一：
 
-- JSON success responses
-- no-content responses
-- error responses
-- request ID propagation into error payloads
+- JSON 成功响应
+- 无内容响应
+- 错误响应
+- request ID 在错误体中的透传
 
-## Middleware Design
+## 中间件设计
 
 ### Request ID
 
-The current `X-Request-ID` behavior will be preserved conceptually, but implemented as Gin middleware.
+当前 `X-Request-ID` 的行为语义将被保留，但改为 Gin 中间件实现。
 
-Requirements:
+要求：
 
-- Ensure each request has a request ID.
-- Expose that request ID in the response header.
-- Make it available to downstream handlers and error helpers.
-- Keep `requestId` available in JSON error bodies.
+- 确保每个请求都有 request ID。
+- 在响应头中暴露该 request ID。
+- 让下游 handler 和错误辅助函数都能访问该 request ID。
+- 在 JSON 错误体中继续提供 `requestId`。
 
 ### Panic Recovery
 
-The current panic recovery middleware will be replaced by Gin middleware that:
+当前 panic recover 中间件将替换为 Gin 中间件，职责包括：
 
-- Recovers panics
-- Logs panic context
-- Returns a structured internal error response
-- Includes request ID in the error payload when available
+- 捕获 panic
+- 记录 panic 上下文
+- 返回结构化的内部错误响应
+- 在可用时把 request ID 注入错误体
 
-Gin's built-in recovery can be used as a base, but a custom wrapper is acceptable if needed to preserve current response semantics.
+可以基于 Gin 内建 recover 能力扩展，但如果要保持现有响应语义，也允许采用自定义封装。
 
-### Session Hydration and Auth Context
+### Session 注水与鉴权上下文
 
-The current session middleware resolves the current authenticated user from the session cookie and repository.
+当前 session 中间件会从 session cookie 解析并加载当前认证用户。
 
-After migration:
+迁移后：
 
-- Session parsing and authenticated user lookup will become Gin middleware and/or Gin helper functions.
-- The resolved user will be stored in `gin.Context`.
-- Authorization helpers will read from `gin.Context` instead of custom request context helpers.
+- session 解析和当前认证用户查找将改为 Gin 中间件和/或 Gin 辅助函数。
+- 解析出的用户将存入 `gin.Context`。
+- 鉴权辅助函数从 `gin.Context` 读取用户，而不是从自定义 request context 中读取。
 
-This should support:
+它需要支持：
 
-- authenticated-user requirements
-- admin-only requirements
-- resource ownership checks for agents and related sub-resources
+- 登录用户校验
+- 管理员权限校验
+- agent 及其子资源的归属校验
 
-## Authorization and Shared HTTP Helpers
+## 授权与共享 HTTP 辅助层
 
-The migration is a good point to consolidate duplicated HTTP-layer logic.
+这次迁移也是收敛重复 HTTP 逻辑的合适时机。
 
-The design includes a shared helper layer for:
+设计中会包含一层共享辅助逻辑，用于：
 
-- getting the current authenticated user
-- enforcing admin access
-- authorizing agent access
-- mapping domain/service errors to HTTP responses
-- writing standardized JSON payloads
+- 获取当前认证用户
+- 校验管理员权限
+- 校验 agent 访问权限
+- 将 domain/service 错误映射为 HTTP 响应
+- 输出统一 JSON 结构
 
-The goal is to reduce handler-specific branching and make route behavior easier to audit.
+目标是减少每个 handler 内部的分支判断，让路由行为更容易审计和维护。
 
-## Error Handling Strategy
+## 错误处理策略
 
-### Stable Shape
+### 稳定的错误体结构
 
-The default error response shape remains:
+默认错误响应结构保持为：
 
 ```json
 {
   "error": "code",
-  "message": "optional human-readable message",
-  "requestId": "optional request id"
+  "message": "可选的人类可读消息",
+  "requestId": "可选的请求 ID"
 }
 ```
 
-This is stable because the frontend client and tests already depend on error-code-based behavior.
+保留这一结构的原因是前端 client 和测试已经依赖基于错误码的行为。
 
-### Consolidation
+### 收敛方式
 
-The current pattern of `writeError`, `writeInternalError`, `writeAgentError`, `writeWeixinError`, and related helpers will be retained conceptually but reorganized around Gin-aware helpers.
+现有的 `writeError`、`writeInternalError`、`writeAgentError`、`writeWeixinError` 等辅助函数在概念上会保留，但会重组为面向 Gin 的统一错误输出通道。
 
-Target outcomes:
+目标结果：
 
-- one consistent path for writing errors
-- clear mapping from domain errors to HTTP status and code
-- consistent logging metadata
-- reduced duplication across handlers
+- 只有一条一致的错误输出路径
+- domain 错误到 HTTP 状态码与错误码的映射清晰
+- 日志元数据保持一致
+- 减少不同 handler 之间的重复代码
 
-### Allowed API Adjustments
+### 允许的 API 调整
 
-HTTP behavior may be adjusted during migration when it improves consistency, but only if all impacted consumers are updated together.
+迁移过程中允许为了提升一致性而调整 HTTP 行为，但前提是所有受影响的消费方必须一并更新。
 
-Allowed examples:
+允许的调整示例：
 
-- standardizing error messages
-- standardizing bad-request handling
-- aligning JSON response formatting across endpoints
+- 统一错误消息
+- 统一 bad request 处理方式
+- 统一不同接口的 JSON 响应格式细节
 
-Disallowed without explicit follow-up scope:
+未经额外范围确认，不允许：
 
-- changing core product workflows
-- changing authentication model
-- redesigning resource URLs for cosmetic reasons only
+- 改变核心产品流程
+- 改变认证模型
+- 改变数据语义
+- 仅仅为了“看起来更整齐”而重设计资源 URL
 
-## Frontend Impact
+## 前端影响
 
-The frontend is in scope for compatibility work required by this migration.
+前端属于本次兼容性改造范围的一部分。
 
-Affected areas may include:
+可能受影响的区域包括：
 
 - `web/lib/api/client.ts`
-- API response typing in `web/lib/api/types.ts`
-- server actions or components that assume specific response details
-- Playwright tests under `web/tests`
+- `web/lib/api/types.ts` 中的 API 响应类型
+- 假定特定响应细节的 server actions 或组件
+- `web/tests` 下的 Playwright 测试
 
-Default compatibility rule:
+默认兼容原则：
 
-- keep route paths unchanged unless there is a concrete reason to improve them
-- update frontend parsing and tests for any intentional response or error-shape adjustments
-- preserve all user-visible workflows
+- 除非有明确收益，否则保持现有路由路径不变
+- 如果有意调整响应结构或错误细节，必须同步更新前端解析和测试
+- 保持所有用户可见流程功能不变
 
-## Testing Strategy
+## 测试策略
 
-### Backend
+### 后端
 
-The migration must keep or restore full backend test coverage for the HTTP layer and existing integration flows.
+本次迁移必须保持或恢复 HTTP 层与现有集成流程的完整后端测试覆盖。
 
-Required backend verification:
+必须执行的后端验证：
 
-- `go test ./...` in `services/api`
-- HTTP handler tests in `services/api/internal/http`
-- integration coverage in `services/api/tests`
+- 在 `services/api` 下运行 `go test ./...`
+- `services/api/internal/http` 中的 HTTP handler 测试
+- `services/api/tests` 中的集成测试
 
-Existing test helpers may need adaptation from generic `http.Handler` assumptions to Gin engine usage, but the test scenarios themselves should remain focused on behavior rather than framework details.
+现有测试辅助代码可能需要从基于泛化 `http.Handler` 的假设调整为面向 Gin engine，但测试场景本身仍应聚焦行为，而不是框架细节。
 
-### Frontend
+### 前端
 
-Required frontend verification should cover both API client behavior and user workflows affected by any API response changes.
+前端验证需要覆盖 API client 行为，以及所有受 HTTP 响应调整影响的用户流程。
 
-Expected verification includes:
+预期验证至少包括：
 
-- unit tests around API client behavior
-- relevant Playwright flows for registration, login, templates, agents, and weixin channel actions
+- API client 行为相关单元测试
+- 注册、登录、模板、agent、weixin channel 相关 Playwright 流程
 
-Exact commands can be finalized in the implementation plan based on repository scripts.
+具体命令可以在实现计划阶段，结合仓库脚本进一步明确。
 
-## Migration Scope Breakdown
+## 迁移范围拆解
 
-The implementation should cover at least these areas:
+实现阶段至少需要覆盖以下内容：
 
-1. Add Gin dependency and wire it into the API service.
-2. Replace `ServeMux` route assembly with Gin engine and route groups.
-3. Convert all HTTP handlers to `gin.Context`.
-4. Replace middleware implementations with Gin-native middleware.
-5. Rework auth/session helper flow to use `gin.Context`.
-6. Rework request binding and JSON response helpers.
-7. Update backend tests to run against the Gin router.
-8. Update frontend client code and UI tests for any intentional HTTP behavior changes.
+1. 引入 Gin 依赖并接入 API 服务。
+2. 用 Gin engine 和路由分组替换 `ServeMux` 路由装配。
+3. 将所有 HTTP handler 改为 `gin.Context` 模型。
+4. 用 Gin 原生中间件替换现有中间件实现。
+5. 将 auth/session 辅助流程改为基于 `gin.Context`。
+6. 重做请求绑定与 JSON 响应辅助层。
+7. 更新后端测试，使其运行在 Gin 路由之上。
+8. 对任何有意调整的 HTTP 行为，同步更新前端 client 与 UI 测试。
 
-## Risks
+## 风险
 
-### Behavior Drift
+### 行为漂移
 
-Switching request binding and middleware stacks can accidentally change:
+请求绑定和中间件栈切换后，容易意外改变：
 
-- JSON parse failure behavior
-- header-writing timing
-- cookie behavior
-- path parameter extraction
-- unauthorized vs forbidden responses
+- JSON 解析失败行为
+- header 写入时机
+- cookie 行为
+- 路径参数提取
+- unauthorized 与 forbidden 的边界
 
-Mitigation:
+缓解方式：
 
-- keep URL structure stable
-- use existing tests as a behavioral safety net
-- add targeted tests where Gin introduces ambiguity
+- 保持 URL 结构稳定
+- 使用现有测试作为行为安全网
+- 对 Gin 容易引入歧义的点补充定向测试
 
-### Over-coupling Business Logic to Gin
+### 业务层与 Gin 耦合过深
 
-There is a risk of pulling Gin types into service or repository layers during migration.
+迁移过程中存在把 Gin 类型带入 service 或 repository 层的风险。
 
-Mitigation:
+缓解方式：
 
-- enforce Gin usage only inside `internal/http`
-- continue passing standard `context.Context` into domain services
+- 严格限制 Gin 只出现在 `internal/http`
+- 继续向 domain service 传递标准 `context.Context`
 
-### Frontend/Backend Contract Mismatch
+### 前后端契约不一致
 
-Intentional API cleanup can break the frontend if changes are not synchronized.
+如果在清理 API 时调整了行为，但没有同步前端，会导致功能回归。
 
-Mitigation:
+缓解方式：
 
-- treat frontend updates as part of the same migration
-- update API client tests and flow tests in the same change set
+- 将前端联动更新视为同一次迁移的一部分
+- 在同一个变更集中同时更新 API client 测试和流程测试
 
-## Success Criteria
+## 成功标准
 
-The migration is complete when:
+当以下条件全部满足时，迁移才算完成：
 
-- all HTTP routing and middleware in `services/api` are Gin-native
-- no `ServeMux`-based routing remains in the backend HTTP layer
-- service and repository layers remain framework-agnostic
-- backend tests pass
-- affected frontend tests pass
-- the application preserves existing user workflows
+- `services/api` 中所有与请求处理相关的入口、路由和中间件都已改为 Gin 体系
+- 后端代码中不再保留基于 `ServeMux` 的路由装配
+- 允许业务层和支撑层重构，但功能、业务语义和数据语义保持不变
+- 后端测试通过
+- 受影响的前端测试通过
+- 应用对用户的既有功能流程保持正常
 
-## Implementation Notes For Planning
+## 实现计划注意事项
 
-The implementation plan should assume one cohesive migration rather than a prolonged mixed-framework state.
+实现计划应按“一次性完成迁移”的思路制定，而不是长期维持混合框架状态。
 
-However, within that migration, work should still be sequenced to reduce risk:
+但在这次整体迁移内部，仍应按风险递减顺序组织工作：
 
-1. establish Gin engine and shared middleware/helpers
-2. convert route registration and handlers by domain
-3. adapt backend tests
-4. adapt frontend contract usage
-5. run full verification
+1. 先搭好 Gin engine 与共享中间件/辅助层
+2. 再按领域迁移路由注册与 handler
+3. 然后按需重构 service/repository/database/runtime/worker 相关适配
+4. 再适配后端测试
+5. 再联动适配前端契约使用方
+6. 最后做全量验证
 
-The plan should explicitly call out any endpoint semantics that are intentionally changed during migration so they can be reviewed before merge.
+实现计划必须显式列出哪些 endpoint 语义是“有意调整”的，以便在合并前复核。
