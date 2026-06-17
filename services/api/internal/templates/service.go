@@ -64,7 +64,8 @@ func (s *Service) CreateWithContents(ctx context.Context, params CreateTemplateP
 	if err != nil {
 		return Template{}, err
 	}
-	if strings.TrimSpace(params.SoulContent) == "" {
+	trimmedSoul := strings.TrimSpace(params.SoulContent)
+	if trimmedSoul == "" {
 		_ = s.repository.DeleteTemplate(ctx, template.ID)
 		_ = s.store.DeleteTemplate(template)
 		return Template{}, ErrInvalidInput
@@ -426,7 +427,7 @@ func (s *Service) ensureDraft(ctx context.Context, template Template) (Template,
 		return Template{}, err
 	}
 	for _, sourceSkill := range sourceSkills {
-		content, err := os.ReadFile(filepath.Join(paths.SkillsPath, sourceSkill.SkillName, "SKILL.md"))
+		content, err := os.ReadFile(filepath.Join(template.SkillsPath, sourceSkill.SkillName, "SKILL.md"))
 		if err != nil {
 			_ = s.repository.DeleteTemplate(ctx, next.ID)
 			_ = s.store.DeleteTemplate(next)

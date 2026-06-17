@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 )
 
 type Service struct {
@@ -22,7 +23,7 @@ func (s *Service) EnsureWeixinChannel(ctx context.Context, agentID string) (Chan
 		return Channel{}, ErrNotFound
 	}
 	if err != nil {
-		return Channel{}, err
+		return Channel{}, fmt.Errorf("load agent status for weixin channel: %w", err)
 	}
 	if status != "running" {
 		return Channel{}, ErrAgentNotRunning
@@ -32,7 +33,11 @@ func (s *Service) EnsureWeixinChannel(ctx context.Context, agentID string) (Chan
 		return channel, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
-		return Channel{}, err
+		return Channel{}, fmt.Errorf("get weixin channel by agent id: %w", err)
 	}
-	return s.repository.CreateWeixin(ctx, agentID)
+	channel, err = s.repository.CreateWeixin(ctx, agentID)
+	if err != nil {
+		return Channel{}, fmt.Errorf("create weixin channel: %w", err)
+	}
+	return channel, nil
 }

@@ -2,8 +2,10 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -201,6 +203,53 @@ func TestSessionMiddlewareAddsAuthenticatedUser(t *testing.T) {
 	if got.ID != user.ID || got.Email != user.Email || got.Role != user.Role {
 		t.Fatalf("context user = %#v, want %#v", got, user)
 	}
+}
+
+func TestSessionRouteInternalErrorsDoNotExposeTechnicalDetails(t *testing.T) {
+	router := NewRouter(Dependencies{
+		AuthRepository: failingAuthRepository{err: errors.New("database offline")},
+		SessionManager: auth.NewSessionManager("test-secret", false),
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewBufferString(`{"email":"user@example.com","password":"secret-password"}`)))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("login status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if bytes.Contains(recorder.Body.Bytes(), []byte("database offline")) {
+		t.Fatalf("response leaked internal error: %s", recorder.Body.String())
+	}
+
+	var response map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if response["message"] != "internal error" {
+		t.Fatalf("message = %q, want internal error", response["message"])
+	}
+	if response["requestId"] == "" {
+		t.Fatalf("requestId missing: %s", recorder.Body.String())
+	}
+}
+
+type failingAuthRepository struct {
+	err error
+}
+
+func (f failingAuthRepository) CreateUser(_ context.Context, _ auth.CreateUserParams) (auth.User, error) {
+	return auth.User{}, f.err
+}
+
+func (f failingAuthRepository) FindUserByEmail(_ context.Context, _ string) (auth.User, error) {
+	return auth.User{}, f.err
+}
+
+func (f failingAuthRepository) FindUserByID(_ context.Context, _ string) (auth.User, error) {
+	return auth.User{}, f.err
+}
+
+func (f failingAuthRepository) PasswordHashForUser(_ context.Context, _ string) (string, error) {
+	return "", f.err
 }
 
 func newHTTPTestDB(t *testing.T) *sql.DB {

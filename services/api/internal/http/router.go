@@ -52,8 +52,10 @@ func NewRouter(deps Dependencies) http.Handler {
 		weixinHandlers := NewWeixinHandlers(deps.AgentService, deps.ChannelService, deps.ChannelRepository, deps.ChannelJobRepository)
 		weixinHandlers.Register(mux)
 	}
+	handler := http.Handler(mux)
 	if deps.SessionManager != nil && deps.AuthRepository != nil {
-		return SessionMiddleware(deps.SessionManager, deps.AuthRepository)(mux)
+		handler = SessionMiddleware(deps.SessionManager, deps.AuthRepository)(handler)
 	}
-	return mux
+	handler = RecoverMiddleware(handler)
+	return RequestIDMiddleware(handler)
 }

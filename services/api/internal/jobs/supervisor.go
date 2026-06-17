@@ -26,13 +26,13 @@ type ChannelJobProcessor interface {
 }
 
 type SupervisorDependencies struct {
-	RuntimeJobs  *RuntimeRepository
-	ChannelJobs  *ChannelRepository
+	RuntimeJobs   *RuntimeRepository
+	ChannelJobs   *ChannelRepository
 	RuntimeWorker RuntimeJobProcessor
 	ChannelWorker ChannelJobProcessor
-	WorkerID     string
-	PollInterval time.Duration
-	LeaseTTL     time.Duration
+	WorkerID      string
+	PollInterval  time.Duration
+	LeaseTTL      time.Duration
 }
 
 type Supervisor struct {
@@ -85,7 +85,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			if errors.Is(err, context.Canceled) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("run supervisor loop: %w", err)
 		}
 		if worked {
 			continue
@@ -106,7 +106,7 @@ func (s *Supervisor) runOnce(ctx context.Context) (bool, error) {
 	case err == nil:
 		return true, s.processRuntimeJob(ctx, runtimeJob)
 	case !errors.Is(err, ErrNotFound):
-		return false, err
+		return false, fmt.Errorf("claim next runtime job: %w", err)
 	}
 
 	channelJob, err := s.channelJobs.ClaimNextQueued(ctx, s.workerID, lockedUntil)
@@ -116,7 +116,7 @@ func (s *Supervisor) runOnce(ctx context.Context) (bool, error) {
 	case errors.Is(err, ErrNotFound):
 		return false, nil
 	default:
-		return false, err
+		return false, fmt.Errorf("claim next channel job: %w", err)
 	}
 }
 
@@ -134,7 +134,7 @@ func (s *Supervisor) processRuntimeJob(ctx context.Context, job RuntimeJob) erro
 		return err
 	}
 	if markErr := s.runtimeJobs.MarkFailed(ctx, job.AgentID, job.ID, stableErrorCode(err), err.Error()); markErr != nil && !errors.Is(markErr, ErrNotFound) {
-		return markErr
+		return fmt.Errorf("mark runtime job failed: %w", markErr)
 	}
 	return nil
 }
@@ -153,7 +153,7 @@ func (s *Supervisor) processChannelJob(ctx context.Context, job ChannelJob) erro
 		return err
 	}
 	if markErr := s.channelJobs.MarkFailed(ctx, job.ID, stableErrorCode(err), err.Error()); markErr != nil && !errors.Is(markErr, ErrNotFound) {
-		return markErr
+		return fmt.Errorf("mark channel job failed: %w", markErr)
 	}
 	return nil
 }

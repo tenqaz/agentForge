@@ -6,3 +6,5 @@ web/.env.local
 .codegraph
 .claude
 docs
+.data
+.agents

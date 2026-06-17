@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,10 +32,17 @@ func main() {
 }
 
 func run() error {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
+
+	slog.Info("Starting AgentForge API", "http_addr", cfg.HTTPAddr, "data_dir", cfg.DataDir)
 
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return err
@@ -119,14 +127,17 @@ func run() error {
 
 	errCh := make(chan error, 2)
 	go func() {
+		slog.Info("Starting job supervisor")
 		errCh <- supervisor.Run(ctx)
 	}()
 	go func() {
+		slog.Info("HTTP server listening", "addr", cfg.HTTPAddr)
 		errCh <- server.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
+		slog.Info("Shutdown signal received, gracefully stopping...")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 		return server.Shutdown(shutdownCtx)
@@ -134,6 +145,7 @@ func run() error {
 		if err == nil || err == http.ErrServerClosed {
 			return nil
 		}
+		slog.Error("Server error", "error", err)
 		return fmt.Errorf("listen and serve: %w", err)
 	}
 }

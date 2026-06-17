@@ -96,13 +96,19 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 
 	job, err := w.loadJob(ctx, jobID)
 	if err != nil {
-		return err
+		return fmt.Errorf("load runtime job: %w", err)
 	}
 	switch job.Type {
 	case TypeProvisionAgent:
-		return w.processProvisionAgent(ctx, job)
+		if err := w.processProvisionAgent(ctx, job); err != nil {
+			return fmt.Errorf("process provision agent job: %w", err)
+		}
+		return nil
 	case TypeRestartRuntime:
-		return w.processRestartRuntime(ctx, job)
+		if err := w.processRestartRuntime(ctx, job); err != nil {
+			return fmt.Errorf("process restart runtime job: %w", err)
+		}
+		return nil
 	default:
 		return ErrInvalidInput
 	}
@@ -111,7 +117,7 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJobRecord) error {
 	agent, err := w.loadAgent(ctx, job.AgentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("load agent for provision: %w", err)
 	}
 
 	if agent.Status == agentStatusRunning {
@@ -127,10 +133,10 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 
 	if agent.Status == agentStatusCreating || agent.Status == agentStatusError {
 		if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusProvisioning, "", "", ""); err != nil {
-			return err
+			return fmt.Errorf("transition agent to provisioning: %w", err)
 		}
 		if err := w.recordEvent(ctx, agent.ID, "provisioning", agent.Status, agentStatusProvisioning, ""); err != nil {
-			return err
+			return fmt.Errorf("record provisioning event: %w", err)
 		}
 		agent.Status = agentStatusProvisioning
 	} else if agent.Status != agentStatusProvisioning && agent.Status != agentStatusStarting {
@@ -165,10 +171,10 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 	runtimeID := runtime.DefaultContainerName(agent.ID)
 	if agent.Status == agentStatusProvisioning {
 		if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusStarting, runtimeID, "", ""); err != nil {
-			return err
+			return fmt.Errorf("transition agent to starting: %w", err)
 		}
 		if err := w.recordEvent(ctx, agent.ID, "starting", agent.Status, agentStatusStarting, ""); err != nil {
-			return err
+			return fmt.Errorf("record starting event: %w", err)
 		}
 		agent.Status = agentStatusStarting
 	}
@@ -186,13 +192,13 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 	}
 
 	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusRunning, runtimeID, "", ""); err != nil {
-		return err
+		return fmt.Errorf("transition agent to running: %w", err)
 	}
 	if err := w.recordEvent(ctx, agent.ID, "running", agent.Status, agentStatusRunning, ""); err != nil {
-		return err
+		return fmt.Errorf("record running event: %w", err)
 	}
 	if err := w.markJobSucceeded(ctx, job.ID); err != nil {
-		return err
+		return fmt.Errorf("mark provision job succeeded: %w", err)
 	}
 	return nil
 }
@@ -200,7 +206,7 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 func (w *RuntimeWorker) processRestartRuntime(ctx context.Context, job runtimeJobRecord) error {
 	agent, err := w.loadAgent(ctx, job.AgentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("load agent for restart: %w", err)
 	}
 	if agent.Status != agentStatusRunning && agent.Status != agentStatusStarting && agent.Status != agentStatusStopped && agent.Status != agentStatusError {
 		return ErrConflict
@@ -224,24 +230,27 @@ func (w *RuntimeWorker) processRestartRuntime(ctx context.Context, job runtimeJo
 	}
 	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusRunning, containerName, "", ""); err != nil {
 		if !errors.Is(err, ErrConflict) {
-			return err
+			return fmt.Errorf("transition restarted agent to running: %w", err)
 		}
 	}
 	if err := w.recordEvent(ctx, agent.ID, "running", agent.Status, agentStatusRunning, ""); err != nil {
-		return err
+		return fmt.Errorf("record restarted running event: %w", err)
 	}
-	return w.markJobSucceeded(ctx, job.ID)
+	if err := w.markJobSucceeded(ctx, job.ID); err != nil {
+		return fmt.Errorf("mark restart job succeeded: %w", err)
+	}
+	return nil
 }
 
 func (w *RuntimeWorker) failProvision(ctx context.Context, job runtimeJobRecord, agent runtimeAgentRecord, code, message string) error {
 	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusError, agent.RuntimeID, code, message); err != nil {
-		return err
+		return fmt.Errorf("transition agent to error: %w", err)
 	}
 	if err := w.recordEvent(ctx, agent.ID, code, agent.Status, agentStatusError, message); err != nil {
-		return err
+		return fmt.Errorf("record failed provision event: %w", err)
 	}
 	if err := w.markJobFailed(ctx, job.ID, code, message); err != nil {
-		return err
+		return fmt.Errorf("mark provision job failed: %w", err)
 	}
 	return fmt.Errorf("%s: %s", code, message)
 }

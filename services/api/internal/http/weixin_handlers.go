@@ -43,7 +43,7 @@ func (h *WeixinHandlers) GetChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, channelResponse{Channel: newChannelDTO(channel)})
@@ -56,7 +56,7 @@ func (h *WeixinHandlers) PutChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	channel, err := h.channels.EnsureWeixinChannel(r.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, channelResponse{Channel: newChannelDTO(channel)})
@@ -76,12 +76,12 @@ func (h *WeixinHandlers) CreatePairingSession(w http.ResponseWriter, r *http.Req
 	}
 	channel, err := h.channels.EnsureWeixinChannel(r.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	session, _, created, err := h.channelJobs.CreateOrReuseConnectJob(r.Context(), channel.ID, nowPlusFiveMinutes())
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	status := http.StatusCreated
@@ -98,12 +98,12 @@ func (h *WeixinHandlers) ListPairingSessions(w http.ResponseWriter, r *http.Requ
 	}
 	channel, err := h.channelRepo.GetByAgentID(r.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	sessions, err := h.channelRepo.ListPairingSessions(r.Context(), channel.ID)
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	result := make([]pairingSessionDTO, 0, len(sessions))
@@ -120,12 +120,12 @@ func (h *WeixinHandlers) GetPairingSession(w http.ResponseWriter, r *http.Reques
 	}
 	channel, err := h.channelRepo.GetByAgentID(r.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	session, err := h.channelRepo.GetPairingSessionByID(r.Context(), channel.ID, r.PathValue("sessionId"))
 	if err != nil {
-		writeWeixinError(w, err)
+		writeWeixinError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, pairingSessionResponse{Session: h.toPairingSessionDTO(session)})
@@ -144,21 +144,21 @@ type pairingSessionsResponse struct {
 }
 
 type channelDTO struct {
-	ID                string           `json:"id,omitempty"`
-	AgentID           string           `json:"agentId,omitempty"`
-	ChannelType       channels.Type    `json:"channelType"`
-	Status            channels.Status  `json:"status"`
-	ExternalAccountID string           `json:"externalAccountId,omitempty"`
-	LastErrorCode     string           `json:"lastErrorCode,omitempty"`
-	LastErrorMessage  string           `json:"lastErrorMessage,omitempty"`
+	ID                string          `json:"id,omitempty"`
+	AgentID           string          `json:"agentId,omitempty"`
+	ChannelType       channels.Type   `json:"channelType"`
+	Status            channels.Status `json:"status"`
+	ExternalAccountID string          `json:"externalAccountId,omitempty"`
+	LastErrorCode     string          `json:"lastErrorCode,omitempty"`
+	LastErrorMessage  string          `json:"lastErrorMessage,omitempty"`
 }
 
 type pairingSessionDTO struct {
-	ID             string                   `json:"id"`
-	Status         channels.PairingStatus   `json:"status"`
-	QRPayload      string                   `json:"qrPayload,omitempty"`
-	QRImageContent string                   `json:"qrImageContent,omitempty"`
-	ExpiresAt      string                   `json:"expiresAt"`
+	ID             string                 `json:"id"`
+	Status         channels.PairingStatus `json:"status"`
+	QRPayload      string                 `json:"qrPayload,omitempty"`
+	QRImageContent string                 `json:"qrImageContent,omitempty"`
+	ExpiresAt      string                 `json:"expiresAt"`
 }
 
 func newChannelDTO(channel channels.Channel) channelDTO {
@@ -188,21 +188,6 @@ func (h *WeixinHandlers) toPairingSessionDTO(session channels.PairingSession) pa
 	return dto
 }
 
-func writeWeixinError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, channels.ErrAgentNotRunning):
-		writeError(w, http.StatusConflict, "agent_not_running")
-	case errors.Is(err, channels.ErrNotFound), errors.Is(err, jobs.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found")
-	case errors.Is(err, channels.ErrConflict), errors.Is(err, jobs.ErrConflict):
-		writeError(w, http.StatusConflict, "conflict")
-	case errors.Is(err, channels.ErrInvalidInput), errors.Is(err, channels.ErrInvalidStateTransition), errors.Is(err, jobs.ErrInvalidInput):
-		writeError(w, http.StatusBadRequest, "invalid_request")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error")
-	}
-}
-
 func (h *WeixinHandlers) authorizeAgent(w http.ResponseWriter, r *http.Request) (agents.Agent, bool) {
 	user, ok := requireAuthenticatedUser(w, r)
 	if !ok {
@@ -210,11 +195,12 @@ func (h *WeixinHandlers) authorizeAgent(w http.ResponseWriter, r *http.Request) 
 	}
 	agent, err := h.agents.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeAgentError(w, err)
+		writeAgentError(w, r, err)
 		return agents.Agent{}, false
 	}
 	if err := auth.RequireAgentOwner(user, agent.OwnerUserID); err != nil {
-		writeError(w, http.StatusForbidden, "forbidden")
+		status, code, message := mapAuthzError(err)
+		writeAuthError(w, status, code, message)
 		return agents.Agent{}, false
 	}
 	return agent, true

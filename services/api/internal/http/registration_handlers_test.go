@@ -67,7 +67,11 @@ func TestRegistrationRouteRejectsDuplicateEmail(t *testing.T) {
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("duplicate registration status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if recorder.Body.String() != "{\"error\":\"email_already_exists\"}\n" {
+	var errResp map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if errResp["error"] != "email_already_exists" {
 		t.Fatalf("duplicate registration body = %q", recorder.Body.String())
 	}
 	if len(recorder.Result().Cookies()) != 0 {
@@ -89,7 +93,11 @@ func TestRegistrationRouteRejectsWeakPassword(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("weak password status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if recorder.Body.String() != "{\"error\":\"invalid_password\"}\n" {
+	var errResp map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if errResp["error"] != "invalid_password" {
 		t.Fatalf("weak password body = %q", recorder.Body.String())
 	}
 	if len(recorder.Result().Cookies()) != 0 {
@@ -111,7 +119,11 @@ func TestRegistrationRouteRejectsInvalidEmail(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid email status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if recorder.Body.String() != "{\"error\":\"invalid_email\"}\n" {
+	var errResp map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if errResp["error"] != "invalid_email" {
 		t.Fatalf("invalid email body = %q", recorder.Body.String())
 	}
 	if len(recorder.Result().Cookies()) != 0 {
@@ -132,7 +144,11 @@ func TestRegistrationRouteRejectsInvalidAndTrailingJSON(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid JSON status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if recorder.Body.String() != "{\"error\":\"invalid_json\"}\n" {
+	var errResp map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if errResp["error"] != "invalid_json" {
 		t.Fatalf("invalid JSON body = %q", recorder.Body.String())
 	}
 
@@ -142,7 +158,11 @@ func TestRegistrationRouteRejectsInvalidAndTrailingJSON(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("trailing JSON status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if recorder.Body.String() != "{\"error\":\"invalid_json\"}\n" {
+	var errResp2 map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &errResp2); err != nil {
+		t.Fatalf("unmarshal trailing error response: %v", err)
+	}
+	if errResp2["error"] != "invalid_json" {
 		t.Fatalf("trailing JSON body = %q", recorder.Body.String())
 	}
 	if len(recorder.Result().Cookies()) != 0 {

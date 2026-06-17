@@ -1,8 +1,7 @@
 package http
 
 import (
-	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -42,7 +41,7 @@ func (h *TemplateHandlers) Register(mux *http.ServeMux) {
 func (h *TemplateHandlers) ListPublished(w http.ResponseWriter, r *http.Request) {
 	templateList, err := h.service.ListPublished(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
@@ -51,11 +50,11 @@ func (h *TemplateHandlers) ListPublished(w http.ResponseWriter, r *http.Request)
 func (h *TemplateHandlers) GetPublished(w http.ResponseWriter, r *http.Request) {
 	template, err := h.service.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	if template.Status != templates.StatusPublished {
-		writeError(w, http.StatusNotFound, "not_found")
+		writeErrorWithMsg(w, http.StatusNotFound, "not_found", "template not published")
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
@@ -67,7 +66,7 @@ func (h *TemplateHandlers) ListAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	templateList, err := h.service.ListAdmin(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
@@ -79,7 +78,7 @@ func (h *TemplateHandlers) GetAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	template, err := h.service.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
@@ -92,7 +91,7 @@ func (h *TemplateHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	request, err := decodeTemplateCreateRequest(r)
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	template, err := h.service.CreateWithContents(r.Context(), templates.CreateTemplateParams{
@@ -104,7 +103,7 @@ func (h *TemplateHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		SkillArchives: request.SkillArchives,
 	})
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, templateResponse{Template: newTemplateDTO(template)})
@@ -123,7 +122,7 @@ func (h *TemplateHandlers) UpdateMetadata(w http.ResponseWriter, r *http.Request
 	}
 	template, err := h.service.UpdateMetadata(r.Context(), r.PathValue("id"), request.Name, request.Description)
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
@@ -134,7 +133,7 @@ func (h *TemplateHandlers) Archive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.service.Archive(r.Context(), r.PathValue("id")); err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -146,7 +145,7 @@ func (h *TemplateHandlers) GetSoul(w http.ResponseWriter, r *http.Request) {
 	}
 	content, err := h.service.Soul(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, contentResponse{Content: content})
@@ -162,7 +161,7 @@ func (h *TemplateHandlers) PutSoul(w http.ResponseWriter, r *http.Request) {
 	}
 	template, err := h.service.PutSoul(r.Context(), r.PathValue("id"), request.Content)
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
@@ -174,7 +173,7 @@ func (h *TemplateHandlers) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 	content, err := h.service.User(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, contentResponse{Content: content})
@@ -190,7 +189,7 @@ func (h *TemplateHandlers) PutUser(w http.ResponseWriter, r *http.Request) {
 	}
 	template, err := h.service.PutUser(r.Context(), r.PathValue("id"), request.Content)
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
@@ -202,7 +201,7 @@ func (h *TemplateHandlers) ListSkills(w http.ResponseWriter, r *http.Request) {
 	}
 	skills, err := h.service.ListSkills(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": skillDTOs(skills)})
@@ -213,23 +212,23 @@ func (h *TemplateHandlers) AddSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request")
+		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "failed to parse multipart form: "+err.Error())
 		return
 	}
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request")
+		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "missing or invalid 'file' field: "+err.Error())
 		return
 	}
 	defer file.Close()
 	archive, err := io.ReadAll(file)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request")
+		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "failed to read file: "+err.Error())
 		return
 	}
 	skill, err := h.service.AddSkillArchive(r.Context(), r.PathValue("id"), archive)
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, skillResponse{Skill: newSkillDTO(skill)})
@@ -241,7 +240,7 @@ func (h *TemplateHandlers) GetSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	skill, content, err := h.service.GetSkill(r.Context(), r.PathValue("id"), r.PathValue("skillId"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, skillResponse{Skill: newSkillDTO(skill), Content: content})
@@ -253,7 +252,7 @@ func (h *TemplateHandlers) DeleteSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.DeleteSkill(r.Context(), r.PathValue("id"), r.PathValue("skillId"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	if result.Cloned {
@@ -269,7 +268,7 @@ func (h *TemplateHandlers) Publish(w http.ResponseWriter, r *http.Request) {
 	}
 	template, err := h.service.Publish(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
@@ -281,7 +280,7 @@ func (h *TemplateHandlers) Unpublish(w http.ResponseWriter, r *http.Request) {
 	}
 	template, err := h.service.Unpublish(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeTemplateError(w, err)
+		writeTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
@@ -369,48 +368,21 @@ func skillDTOs(skills []templates.Skill) []skillDTO {
 func requireAdminUser(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeAuthError(w, http.StatusUnauthorized, "unauthorized", publicMessageForCode("unauthorized"))
 		return auth.User{}, false
 	}
 	if err := auth.RequireAdmin(user); err != nil {
-		writeError(w, http.StatusForbidden, "forbidden")
+		status, code, message := mapAuthzError(err)
+		writeAuthError(w, status, code, message)
 		return auth.User{}, false
 	}
 	return user, true
 }
 
-func decodeRequest(w http.ResponseWriter, r *http.Request, target any) bool {
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(target); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json")
-		return false
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "invalid_json")
-		return false
-	}
-	return true
-}
-
-func writeTemplateError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, templates.ErrNotFound), errors.Is(err, templates.ErrSkillNotFound):
-		writeError(w, http.StatusNotFound, "not_found")
-	case errors.Is(err, templates.ErrConflict):
-		writeError(w, http.StatusConflict, "conflict")
-	case errors.Is(err, templates.ErrInvalidInput):
-		writeError(w, http.StatusBadRequest, "invalid_request")
-	case errors.Is(err, templates.ErrInvalidTemplate):
-		writeError(w, http.StatusBadRequest, "invalid_template")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error")
-	}
-}
 
 func decodeTemplateCreateRequest(r *http.Request) (createTemplateRequest, error) {
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		return createTemplateRequest{}, templates.ErrInvalidInput
+		return createTemplateRequest{}, fmt.Errorf("%w: failed to parse multipart form: %v", templates.ErrInvalidInput, err)
 	}
 	request := createTemplateRequest{
 		Name:        r.FormValue("name"),
@@ -438,12 +410,12 @@ func readMultipartSkillArchive(header *multipart.FileHeader) (templates.SkillArc
 	}
 	file, err := header.Open()
 	if err != nil {
-		return templates.SkillArchive{}, err
+		return templates.SkillArchive{}, fmt.Errorf("%w: failed to open skill file: %v", templates.ErrInvalidInput, err)
 	}
 	defer file.Close()
 	content, err := io.ReadAll(file)
 	if err != nil {
-		return templates.SkillArchive{}, err
+		return templates.SkillArchive{}, fmt.Errorf("%w: failed to read skill file: %v", templates.ErrInvalidInput, err)
 	}
 	return templates.SkillArchive{
 		Filename: header.Filename,

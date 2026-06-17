@@ -1,7 +1,6 @@
 package http
 
 import (
-	"errors"
 	"net/http"
 
 	"agentforge.local/services/api/internal/agents"
@@ -48,7 +47,7 @@ func (h *AgentHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		Name:        request.Name,
 	})
 	if err != nil {
-		writeAgentError(w, err)
+		writeAgentError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, agentResponse{Agent: newAgentDTO(agent)})
@@ -70,7 +69,7 @@ func (h *AgentHandlers) List(w http.ResponseWriter, r *http.Request) {
 		agentList, err = h.service.ListByOwner(r.Context(), user.ID)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"agents": agentDTOs(agentList)})
@@ -91,7 +90,7 @@ func (h *AgentHandlers) GetRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	runtime, err := h.service.Runtime(r.Context(), agent.ID)
 	if err != nil {
-		writeAgentError(w, err)
+		writeAgentError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, runtimeResponse{Runtime: newAgentRuntimeDTO(runtime)})
@@ -104,7 +103,7 @@ func (h *AgentHandlers) ListRuntimeJobs(w http.ResponseWriter, r *http.Request) 
 	}
 	runtimeJobs, err := h.runtimeJobs.ListByAgent(r.Context(), agent.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": runtimeJobDTOs(runtimeJobs)})
@@ -123,13 +122,13 @@ func (h *AgentHandlers) CreateRuntimeJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if request.Type != jobs.TypeRestartRuntime {
-		writeError(w, http.StatusBadRequest, "invalid_request")
+		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "only restart_runtime type is supported")
 		return
 	}
 
 	job, err := h.service.CreateRuntimeJob(r.Context(), agent.ID, request.Type)
 	if err != nil {
-		writeRuntimeJobError(w, err)
+		writeRuntimeJobError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
@@ -142,7 +141,7 @@ func (h *AgentHandlers) GetRuntimeJob(w http.ResponseWriter, r *http.Request) {
 	}
 	job, err := h.runtimeJobs.GetByID(r.Context(), agent.ID, r.PathValue("jobId"))
 	if err != nil {
-		writeRuntimeJobError(w, err)
+		writeRuntimeJobError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
@@ -269,11 +268,12 @@ func (h *AgentHandlers) authorizeAgent(w http.ResponseWriter, r *http.Request) (
 	}
 	agent, err := h.service.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeAgentError(w, err)
+		writeAgentError(w, r, err)
 		return agents.Agent{}, false
 	}
 	if err := auth.RequireAgentOwner(user, agent.OwnerUserID); err != nil {
-		writeError(w, http.StatusForbidden, "forbidden")
+		status, code, message := mapAuthzError(err)
+		writeAuthError(w, status, code, message)
 		return agents.Agent{}, false
 	}
 	return agent, true
@@ -286,34 +286,4 @@ func requireAuthenticatedUser(w http.ResponseWriter, r *http.Request) (auth.User
 		return auth.User{}, false
 	}
 	return user, true
-}
-
-func writeAgentError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, agents.ErrNotFound), errors.Is(err, agents.ErrTemplateNotFound):
-		writeError(w, http.StatusNotFound, "not_found")
-	case errors.Is(err, agents.ErrConflict):
-		writeError(w, http.StatusConflict, "conflict")
-	case errors.Is(err, agents.ErrInvalidInput), errors.Is(err, agents.ErrInvalidStateTransition):
-		writeError(w, http.StatusBadRequest, "invalid_request")
-	case errors.Is(err, agents.ErrRuntimeUnavailable):
-		writeError(w, http.StatusConflict, "runtime_unavailable")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error")
-	}
-}
-
-func writeRuntimeJobError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, jobs.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found")
-	case errors.Is(err, jobs.ErrConflict):
-		writeError(w, http.StatusConflict, "conflict")
-	case errors.Is(err, jobs.ErrInvalidInput):
-		writeError(w, http.StatusBadRequest, "invalid_request")
-	case errors.Is(err, agents.ErrRuntimeUnavailable):
-		writeError(w, http.StatusConflict, "runtime_unavailable")
-	default:
-		writeError(w, http.StatusInternalServerError, "internal_error")
-	}
 }

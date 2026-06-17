@@ -28,12 +28,12 @@ func (h *SessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json")
+		writeAPIError(w, http.StatusBadRequest, "invalid_json", publicMessageForCode("invalid_json"), nil)
 		return
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "invalid_json")
+		writeAPIError(w, http.StatusBadRequest, "invalid_json", "extra fields in request body", nil)
 		return
 	}
 	user, err := h.authRepository.FindUserByEmail(r.Context(), request.Email)
@@ -43,7 +43,7 @@ func (h *SessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid_credentials")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	hash, err := h.authRepository.PasswordHashForUser(r.Context(), user.ID)
@@ -52,7 +52,7 @@ func (h *SessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid_credentials")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	if !auth.CheckPassword(hash, request.Password) {
@@ -60,7 +60,7 @@ func (h *SessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.sessionManager.SetSessionCookie(w, user); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, userResponse{User: user})
@@ -69,7 +69,7 @@ func (h *SessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
 func (h *SessionHandlers) Current(w http.ResponseWriter, r *http.Request) {
 	claims, err := h.sessionManager.ParseRequest(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeAuthError(w, http.StatusUnauthorized, "unauthorized", publicMessageForCode("unauthorized"))
 		return
 	}
 	user, err := h.authRepository.FindUserByID(r.Context(), claims.UserID)
@@ -78,7 +78,7 @@ func (h *SessionHandlers) Current(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, userResponse{User: user})
@@ -99,8 +99,4 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
-}
-
-func writeError(w http.ResponseWriter, status int, code string) {
-	writeJSON(w, status, map[string]string{"error": code})
 }

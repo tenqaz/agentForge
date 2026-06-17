@@ -25,12 +25,12 @@ func (h *RegistrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json")
+		writeAPIError(w, http.StatusBadRequest, "invalid_json", publicMessageForCode("invalid_json"), nil)
 		return
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "invalid_json")
+		writeAPIError(w, http.StatusBadRequest, "invalid_json", "extra fields in request body", nil)
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *RegistrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, auth.ErrEmailLookupAmbiguous):
 			writeError(w, http.StatusConflict, "email_conflict")
 		default:
-			writeError(w, http.StatusInternalServerError, "internal_error")
+			writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
 		}
 		return
 	}
