@@ -1,12 +1,11 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 
 	"agentforge.local/services/api/internal/auth"
+	"github.com/gin-gonic/gin"
 )
 
 type SessionHandlers struct {
@@ -21,72 +20,71 @@ func NewSessionHandlers(authRepository AuthRepository, sessionManager *auth.Sess
 	}
 }
 
-func (h *SessionHandlers) Create(w http.ResponseWriter, r *http.Request) {
+func (h *SessionHandlers) Register(router gin.IRoutes) {
+	router.POST("/sessions", h.Create)
+	router.GET("/session", h.Current)
+	router.DELETE("/session", h.Delete)
+}
+
+func (h *SessionHandlers) Create(c *gin.Context) {
 	var request struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&request); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_json", publicMessageForCode("invalid_json"), nil)
+	if !decodeRequest(c, &request) {
 		return
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		writeAPIError(w, http.StatusBadRequest, "invalid_json", "extra fields in request body", nil)
-		return
-	}
-	user, err := h.authRepository.FindUserByEmail(r.Context(), request.Email)
+	user, err := h.authRepository.FindUserByEmail(c.Request.Context(), request.Email)
 	if err != nil {
 		if errors.Is(err, auth.ErrUserNotFound) {
 			auth.CheckPassword(dummyPasswordHash, request.Password)
-			writeError(w, http.StatusUnauthorized, "invalid_credentials")
+			writeError(c, http.StatusUnauthorized, "invalid_credentials")
 			return
 		}
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
-	hash, err := h.authRepository.PasswordHashForUser(r.Context(), user.ID)
+	hash, err := h.authRepository.PasswordHashForUser(c.Request.Context(), user.ID)
 	if err != nil {
 		if errors.Is(err, auth.ErrUserNotFound) {
-			writeError(w, http.StatusUnauthorized, "invalid_credentials")
+			writeError(c, http.StatusUnauthorized, "invalid_credentials")
 			return
 		}
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
 	if !auth.CheckPassword(hash, request.Password) {
-		writeError(w, http.StatusUnauthorized, "invalid_credentials")
+		writeError(c, http.StatusUnauthorized, "invalid_credentials")
 		return
 	}
-	if err := h.sessionManager.SetSessionCookie(w, user); err != nil {
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+	if err := h.sessionManager.SetSessionCookie(c.Writer, user); err != nil {
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, userResponse{User: user})
+	writeJSON(c, http.StatusOK, userResponse{User: user})
 }
 
-func (h *SessionHandlers) Current(w http.ResponseWriter, r *http.Request) {
-	claims, err := h.sessionManager.ParseRequest(r)
+func (h *SessionHandlers) Current(c *gin.Context) {
+	claims, err := h.sessionManager.ParseRequest(c.Request)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "unauthorized", publicMessageForCode("unauthorized"))
+		writeAuthError(c, http.StatusUnauthorized, "unauthorized", publicMessageForCode("unauthorized"))
 		return
 	}
-	user, err := h.authRepository.FindUserByID(r.Context(), claims.UserID)
+	user, err := h.authRepository.FindUserByID(c.Request.Context(), claims.UserID)
 	if err != nil {
 		if errors.Is(err, auth.ErrUserNotFound) {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			writeError(c, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, userResponse{User: user})
+	writeJSON(c, http.StatusOK, userResponse{User: user})
 }
 
-func (h *SessionHandlers) Delete(w http.ResponseWriter, _ *http.Request) {
-	h.sessionManager.ClearSessionCookie(w)
-	w.WriteHeader(http.StatusNoContent)
+func (h *SessionHandlers) Delete(c *gin.Context) {
+	h.sessionManager.ClearSessionCookie(c.Writer)
+	c.Status(http.StatusNoContent)
 }
 
 type userResponse struct {
@@ -95,8 +93,6 @@ type userResponse struct {
 
 const dummyPasswordHash = "$2a$10$7EqJtq98hPqEX7fNZaFWoOHi8a5eihfHcMN0KXpmwE5jQjlu7K.6a"
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+func writeJSON(c *gin.Context, status int, value any) {
+	c.JSON(status, value)
 }

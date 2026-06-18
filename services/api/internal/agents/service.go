@@ -31,8 +31,14 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Agent, error
 	params.OwnerUserID = strings.TrimSpace(params.OwnerUserID)
 	params.TemplateID = strings.TrimSpace(params.TemplateID)
 	params.Name = strings.TrimSpace(params.Name)
-	if params.OwnerUserID == "" || params.TemplateID == "" || params.Name == "" {
-		return Agent{}, ErrInvalidInput
+	if params.OwnerUserID == "" {
+		return Agent{}, fmt.Errorf("%w: owner user ID cannot be empty", ErrInvalidInput)
+	}
+	if params.TemplateID == "" {
+		return Agent{}, fmt.Errorf("%w: template ID cannot be empty", ErrInvalidInput)
+	}
+	if params.Name == "" {
+		return Agent{}, fmt.Errorf("%w: agent name cannot be empty", ErrInvalidInput)
 	}
 
 	tx, err := s.database.BeginTx(ctx, nil)
@@ -115,7 +121,7 @@ func (s *Service) Runtime(ctx context.Context, id string) (Runtime, error) {
 
 func (s *Service) CreateRuntimeJob(ctx context.Context, agentID string, jobType jobs.Type) (jobs.RuntimeJob, error) {
 	if jobType != jobs.TypeRestartRuntime {
-		return jobs.RuntimeJob{}, jobs.ErrInvalidInput
+		return jobs.RuntimeJob{}, fmt.Errorf("%w: unsupported job type: %q", jobs.ErrInvalidInput, jobType)
 	}
 	agent, err := s.repository.Get(ctx, agentID)
 	if err != nil {

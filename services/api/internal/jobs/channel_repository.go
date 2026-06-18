@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -47,8 +48,11 @@ func NewChannelRepository(database *sql.DB) *ChannelRepository {
 }
 
 func (r *ChannelRepository) CreateQueued(ctx context.Context, job ChannelJob) (ChannelJob, error) {
-	if strings.TrimSpace(job.AgentChannelID) == "" || !isValidChannelJobType(job.Type) {
-		return ChannelJob{}, ErrInvalidInput
+	if strings.TrimSpace(job.AgentChannelID) == "" {
+		return ChannelJob{}, fmt.Errorf("%w: agent channel ID cannot be empty", ErrInvalidInput)
+	}
+	if !isValidChannelJobType(job.Type) {
+		return ChannelJob{}, fmt.Errorf("%w: invalid channel job type: %q", ErrInvalidInput, job.Type)
 	}
 	if job.ID == "" {
 		job.ID = uuid.NewString()

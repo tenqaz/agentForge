@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -203,8 +204,11 @@ func (r *RuntimeRepository) MarkFailed(ctx context.Context, agentID, jobID, code
 }
 
 func (r *RuntimeRepository) createQueued(ctx context.Context, db queryer, job RuntimeJob) (RuntimeJob, error) {
-	if strings.TrimSpace(job.AgentID) == "" || !isValidType(job.Type) {
-		return RuntimeJob{}, ErrInvalidInput
+	if strings.TrimSpace(job.AgentID) == "" {
+		return RuntimeJob{}, fmt.Errorf("%w: agent ID cannot be empty", ErrInvalidInput)
+	}
+	if !isValidType(job.Type) {
+		return RuntimeJob{}, fmt.Errorf("%w: invalid job type: %q", ErrInvalidInput, job.Type)
 	}
 	if job.ID == "" {
 		job.ID = uuid.NewString()

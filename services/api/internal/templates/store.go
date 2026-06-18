@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -88,11 +90,11 @@ func (s *FileStore) WriteSkill(template Template, skillName, content string) (st
 
 func (s *FileStore) ImportSkillArchive(template Template, skillName string, content []byte) (string, error) {
 	if !validSkillName(skillName) || len(content) == 0 {
-		return "", ErrInvalidInput
+		return "", fmt.Errorf("%w: invalid skill name or empty content", ErrInvalidInput)
 	}
 	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
 	if err != nil {
-		return "", ErrInvalidInput
+		return "", fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
 	type archiveEntry struct {
@@ -106,11 +108,11 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 	for _, file := range reader.File {
 		cleaned := filepath.Clean(file.Name)
 		if cleaned == "." || strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
-			return "", ErrInvalidInput
+			return "", fmt.Errorf("%w: invalid path in archive: %q", ErrInvalidInput, file.Name)
 		}
 		parts := strings.Split(cleaned, string(filepath.Separator))
 		if len(parts) == 0 || parts[0] == "" {
-			return "", ErrInvalidInput
+			return "", fmt.Errorf("%w: invalid path structure in archive: %q", ErrInvalidInput, file.Name)
 		}
 		if len(parts) < 2 {
 			wrappedRoot = false
@@ -123,7 +125,7 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 		entries = append(entries, archiveEntry{path: cleaned, file: file})
 	}
 	if len(entries) == 0 {
-		return "", ErrInvalidInput
+		return "", fmt.Errorf("%w: empty archive", ErrInvalidInput)
 	}
 	if !wrappedRoot {
 		root = ""
@@ -133,7 +135,7 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		return "", err
 	}
-	hasSkillMD := false
+	var skillMDPath string
 	for _, entry := range entries {
 		relative := entry.path
 		if root != "" {
@@ -146,7 +148,7 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 		}
 		targetPath := filepath.Join(skillDir, relative)
 		if !strings.HasPrefix(targetPath, skillDir) {
-			return "", ErrInvalidInput
+			return "", fmt.Errorf("%w: path traversal attempt: %q", ErrInvalidInput, relative)
 		}
 		if entry.file.FileInfo().IsDir() {
 			if err := os.MkdirAll(targetPath, 0o755); err != nil {
@@ -169,15 +171,14 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 		if err := os.WriteFile(targetPath, data, 0o644); err != nil {
 			return "", err
 		}
-		if relative == "SKILL.md" {
-			hasSkillMD = true
+		if filepath.Base(relative) == "SKILL.md" {
+			skillMDPath = targetPath
 		}
 	}
-	if !hasSkillMD {
+	if skillMDPath == "" {
 		_ = os.RemoveAll(skillDir)
-		return "", ErrInvalidInput
+		return "", fmt.Errorf("%w: missing SKILL.md in archive", ErrInvalidInput)
 	}
-	skillMDPath := filepath.Join(skillDir, "SKILL.md")
 	skillMD, err := os.ReadFile(skillMDPath)
 	if err != nil {
 		_ = os.RemoveAll(skillDir)
@@ -185,7 +186,7 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 	}
 	if !hasRequiredSkillFrontmatter(string(skillMD)) {
 		_ = os.RemoveAll(skillDir)
-		return "", ErrInvalidInput
+		return "", fmt.Errorf("%w: SKILL.md missing required frontmatter", ErrInvalidInput)
 	}
 	return checksumString(string(skillMD)), nil
 }
@@ -194,11 +195,11 @@ func (s *FileStore) WriteSkillArchive(template Template, skillName string, files
 	skillRoot := filepath.Join(template.SkillsPath, skillName)
 	for relative, content := range files {
 		if relative == "" || relative == "." {
-			return "", ErrInvalidInput
+			return "", fmt.Errorf("%w: invalid file path: %q", ErrInvalidInput, relative)
 		}
 		targetPath := filepath.Join(skillRoot, relative)
 		if !isPathWithin(skillRoot, targetPath) {
-			return "", ErrInvalidInput
+			return "", fmt.Errorf("%w: path traversal attempt: %q", ErrInvalidInput, relative)
 		}
 		if err := writeFileBytes(targetPath, content); err != nil {
 			return "", err
@@ -207,7 +208,10 @@ func (s *FileStore) WriteSkillArchive(template Template, skillName string, files
 	skillMD, ok := files["SKILL.md"]
 	if !ok || !hasRequiredSkillFrontmatter(string(skillMD)) {
 		_ = os.RemoveAll(skillRoot)
-		return "", ErrInvalidInput
+		if !ok {
+			return "", fmt.Errorf("%w: missing SKILL.md", ErrInvalidInput)
+		}
+		return "", fmt.Errorf("%w: SKILL.md missing required frontmatter", ErrInvalidInput)
 	}
 	return checksumBytes(files), nil
 }
@@ -252,10 +256,34 @@ func (s *FileStore) RemoveTrash(path string) error {
 }
 
 func (s *FileStore) DeleteTemplate(template Template) error {
-	if template.TemplatePath == "" {
+	// 不依赖数据库中存储的路径，而是用 templateID 直接构建模板根目录
+	templateDir := filepath.Join(s.dataDir, "templates", template.ID)
+
+	// 记录日志用于调试
+	slog.Debug("DeleteTemplate called",
+		"template_id", template.ID,
+		"data_dir", s.dataDir,
+		"computed_template_dir", templateDir,
+		"template_path_from_db", template.TemplatePath)
+
+	// 确认目录存在
+	if _, err := os.Stat(templateDir); errors.Is(err, os.ErrNotExist) {
+		slog.Debug("template directory does not exist, nothing to delete",
+			"template_dir", templateDir)
+		// 目录不存在，无需删除
 		return nil
 	}
-	return os.RemoveAll(filepath.Dir(filepath.Dir(template.TemplatePath)))
+
+	slog.Debug("removing template directory", "path", templateDir)
+	err := os.RemoveAll(templateDir)
+	if err != nil {
+		slog.Error("failed to remove template directory",
+			"path", templateDir,
+			"error", err)
+		return err
+	}
+	slog.Debug("template directory removed successfully", "path", templateDir)
+	return nil
 }
 
 func (s *FileStore) Checksum(template Template) (string, error) {

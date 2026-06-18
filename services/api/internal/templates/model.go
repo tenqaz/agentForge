@@ -16,6 +16,7 @@ var (
 	ErrConflict        = errors.New("template conflict")
 	ErrInvalidInput    = errors.New("invalid template input")
 	ErrInvalidTemplate = errors.New("invalid template")
+	ErrTemplateInUse   = errors.New("template is in use by agents")
 )
 
 type Template struct {

@@ -171,3 +171,17 @@ func isUniqueConstraint(err error) bool {
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "unique")
 }
+
+// HasAgentsForTemplate checks if there are any agents using the specified template.
+func (r *Repository) HasAgentsForTemplate(ctx context.Context, templateID string) (bool, error) {
+	var count int
+	err := r.database.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM agents
+		WHERE template_id = ?;
+	`, templateID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

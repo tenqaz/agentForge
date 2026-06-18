@@ -14,6 +14,7 @@ import (
 	"agentforge.local/services/api/internal/channels"
 	"agentforge.local/services/api/internal/jobs"
 	"agentforge.local/services/api/internal/templates"
+	"github.com/gin-gonic/gin"
 )
 
 type apiError struct {
@@ -22,23 +23,32 @@ type apiError struct {
 	RequestID string `json:"requestId,omitempty"`
 }
 
-func writeError(w http.ResponseWriter, status int, code string) {
-	writeAPIError(w, status, code, publicMessageForCode(code), nil)
+func writeError(c *gin.Context, status int, code string) {
+	writeAPIError(c, status, code, publicMessageForCode(code), nil)
 }
 
-func writeErrorWithMsg(w http.ResponseWriter, status int, code string, msg string) {
-	writeAPIError(w, status, code, msg, nil)
+func writeErrorWithMsg(c *gin.Context, status int, code, msg string) {
+	writeAPIError(c, status, code, msg, nil)
 }
 
-func writeInternalError(w http.ResponseWriter, r *http.Request, status int, code, message string, err error) {
+func writeInternalError(c *gin.Context, status int, code, message string, err error) {
 	if message == "" {
 		message = publicMessageForCode(code)
 	}
-	writeAPIError(w, status, code, message, errWithRequest(r, err))
+	writeAPIError(c, status, code, message, errWithRequest(c, err))
 }
 
-func writeAPIError(w http.ResponseWriter, status int, code, message string, err error) {
-	reqID := w.Header().Get("X-Request-ID")
+func requestIDFromContext(c *gin.Context) string {
+	value, ok := c.Get(requestIDContextKey)
+	if !ok {
+		return ""
+	}
+	requestID, _ := value.(string)
+	return requestID
+}
+
+func writeAPIError(c *gin.Context, status int, code, message string, err error) {
+	reqID := requestIDFromContext(c)
 	resp := apiError{Code: code}
 	if message != "" {
 		resp.Message = message
@@ -55,13 +65,23 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string, err 
 			"request_id", reqID,
 			"error", err,
 		}
+
+		// 提取并添加堆栈信息
+		var stackErr *errorWithStack
+		if errors.As(err, &stackErr) {
+			attrs = append(attrs, "stack", string(stackErr.Stack))
+		} else {
+			// 对于所有错误都捕获堆栈信息
+			attrs = append(attrs, "stack", string(debug.Stack()))
+		}
+
 		if requestErr, ok := err.(*requestError); ok {
 			attrs = append(attrs, "method", requestErr.Method, "path", requestErr.Path)
 		}
 		slog.Error("api request failed", attrs...)
 	}
 
-	writeJSON(w, status, resp)
+	c.JSON(status, resp)
 }
 
 func publicMessageForCode(code string) string {
@@ -111,92 +131,131 @@ func (e *requestError) Unwrap() error {
 	return e.Err
 }
 
-func errWithRequest(r *http.Request, err error) error {
-	if err == nil || r == nil {
+// errorWithStack 包装错误并携带堆栈信息
+type errorWithStack struct {
+	Err   error
+	Stack []byte
+}
+
+func (e *errorWithStack) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *errorWithStack) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// withStack 为错误添加堆栈信息（如果还没有）
+func withStack(err error) error {
+	if err == nil {
+		return nil
+	}
+	// 检查是否已经有堆栈
+	var existing *errorWithStack
+	if errors.As(err, &existing) {
 		return err
 	}
-	return &requestError{
-		Method: r.Method,
-		Path:   r.URL.Path,
-		Err:    err,
+	return &errorWithStack{
+		Err:   err,
+		Stack: debug.Stack(),
 	}
 }
 
-func writeTemplateError(w http.ResponseWriter, r *http.Request, err error) {
+func errWithRequest(c *gin.Context, err error) error {
+	if err == nil || c == nil || c.Request == nil {
+		return err
+	}
+	// 先添加堆栈，再包装请求信息
+	return &requestError{
+		Method: c.Request.Method,
+		Path:   c.Request.URL.Path,
+		Err:    withStack(err),
+	}
+}
+
+func writeTemplateError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, templates.ErrNotFound), errors.Is(err, templates.ErrSkillNotFound):
-		writeAPIError(w, http.StatusNotFound, "not_found", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusNotFound, "not_found", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, templates.ErrConflict):
-		writeAPIError(w, http.StatusConflict, "conflict", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusConflict, "conflict", err.Error(), errWithRequest(c, err))
+	case errors.Is(err, templates.ErrTemplateInUse):
+		writeAPIError(c, http.StatusConflict, "conflict", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, templates.ErrInvalidInput):
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, templates.ErrInvalidTemplate):
-		writeAPIError(w, http.StatusBadRequest, "invalid_template", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusBadRequest, "invalid_template", err.Error(), errWithRequest(c, err))
 	default:
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 	}
 }
 
-func writeAgentError(w http.ResponseWriter, r *http.Request, err error) {
+func writeAgentError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, agents.ErrNotFound), errors.Is(err, agents.ErrTemplateNotFound):
-		writeAPIError(w, http.StatusNotFound, "not_found", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusNotFound, "not_found", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, agents.ErrConflict):
-		writeAPIError(w, http.StatusConflict, "conflict", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusConflict, "conflict", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, agents.ErrInvalidInput), errors.Is(err, agents.ErrInvalidStateTransition):
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, agents.ErrRuntimeUnavailable):
-		writeAPIError(w, http.StatusConflict, "runtime_unavailable", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusConflict, "runtime_unavailable", err.Error(), errWithRequest(c, err))
 	default:
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 	}
 }
 
-func writeRuntimeJobError(w http.ResponseWriter, r *http.Request, err error) {
+func writeRuntimeJobError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, jobs.ErrNotFound):
-		writeAPIError(w, http.StatusNotFound, "not_found", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusNotFound, "not_found", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, jobs.ErrConflict):
-		writeAPIError(w, http.StatusConflict, "conflict", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusConflict, "conflict", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, jobs.ErrInvalidInput):
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, agents.ErrRuntimeUnavailable):
-		writeAPIError(w, http.StatusConflict, "runtime_unavailable", err.Error(), errWithRequest(r, err))
+		writeAPIError(c, http.StatusConflict, "runtime_unavailable", err.Error(), errWithRequest(c, err))
 	default:
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 	}
 }
 
-func writeWeixinError(w http.ResponseWriter, r *http.Request, err error) {
+func writeWeixinError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, channels.ErrAgentNotRunning):
-		writeAPIError(w, http.StatusConflict, "agent_not_running", publicMessageForCode("agent_not_running"), errWithRequest(r, err))
+		writeAPIError(c, http.StatusConflict, "agent_not_running", publicMessageForCode("agent_not_running"), errWithRequest(c, err))
 	case errors.Is(err, channels.ErrNotFound), errors.Is(err, jobs.ErrNotFound):
-		writeAPIError(w, http.StatusNotFound, "not_found", publicMessageForCode("not_found"), errWithRequest(r, err))
+		writeAPIError(c, http.StatusNotFound, "not_found", publicMessageForCode("not_found"), errWithRequest(c, err))
 	case errors.Is(err, channels.ErrConflict), errors.Is(err, jobs.ErrConflict):
-		writeAPIError(w, http.StatusConflict, "conflict", publicMessageForCode("conflict"), errWithRequest(r, err))
+		writeAPIError(c, http.StatusConflict, "conflict", publicMessageForCode("conflict"), errWithRequest(c, err))
 	case errors.Is(err, channels.ErrInvalidInput), errors.Is(err, channels.ErrInvalidStateTransition), errors.Is(err, jobs.ErrInvalidInput):
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", publicMessageForCode("invalid_request"), errWithRequest(r, err))
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", publicMessageForCode("invalid_request"), errWithRequest(c, err))
 	default:
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 	}
 }
 
-func recoverPanic(w http.ResponseWriter, r *http.Request, recovered any) {
+func recoverPanic(c *gin.Context, recovered any) {
 	slog.Error(
 		"panic recovered",
 		"event", "panic_recovered",
-		"request_id", w.Header().Get("X-Request-ID"),
-		"method", r.Method,
-		"path", r.URL.Path,
+		"request_id", requestIDFromContext(c),
+		"method", c.Request.Method,
+		"path", c.Request.URL.Path,
 		"panic", recovered,
 		"stack", string(debug.Stack()),
 	)
-	writeAPIError(w, http.StatusInternalServerError, "internal_error", publicMessageForCode("internal_error"), nil)
+	writeAPIError(c, http.StatusInternalServerError, "internal_error", publicMessageForCode("internal_error"), nil)
 }
 
-func writeAuthError(w http.ResponseWriter, status int, code, message string) {
-	writeAPIError(w, status, code, message, nil)
+func writeAuthError(c *gin.Context, status int, code, message string) {
+	writeAPIError(c, status, code, message, nil)
 }
 
 func mapAuthzError(err error) (int, string, string) {
@@ -208,15 +267,15 @@ func mapAuthzError(err error) (int, string, string) {
 	}
 }
 
-func decodeRequest(w http.ResponseWriter, r *http.Request, target any) bool {
-	decoder := json.NewDecoder(r.Body)
+func decodeRequest(c *gin.Context, target any) bool {
+	decoder := json.NewDecoder(c.Request.Body)
 	if err := decoder.Decode(target); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_json", publicMessageForCode("invalid_json"), errWithRequest(r, err))
+		writeAPIError(c, http.StatusBadRequest, "invalid_json", publicMessageForCode("invalid_json"), errWithRequest(c, err))
 		return false
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeAPIError(w, http.StatusBadRequest, "invalid_json", "extra fields in request body", errWithRequest(r, err))
+		writeAPIError(c, http.StatusBadRequest, "invalid_json", "extra fields in request body", errWithRequest(c, err))
 		return false
 	}
 	return true

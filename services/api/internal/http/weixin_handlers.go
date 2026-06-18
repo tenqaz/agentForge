@@ -10,6 +10,7 @@ import (
 	"agentforge.local/services/api/internal/auth"
 	"agentforge.local/services/api/internal/channels"
 	"agentforge.local/services/api/internal/jobs"
+	"github.com/gin-gonic/gin"
 )
 
 type WeixinHandlers struct {
@@ -23,112 +24,112 @@ func NewWeixinHandlers(agentService *agents.Service, channelService *channels.Se
 	return &WeixinHandlers{agents: agentService, channels: channelService, channelRepo: channelRepo, channelJobs: channelJobs}
 }
 
-func (h *WeixinHandlers) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/agents/{id}/channels/weixin", h.GetChannel)
-	mux.HandleFunc("PUT /api/agents/{id}/channels/weixin", h.PutChannel)
-	mux.HandleFunc("DELETE /api/agents/{id}/channels/weixin", h.DeleteChannel)
-	mux.HandleFunc("GET /api/agents/{id}/channels/weixin/pairing-sessions", h.ListPairingSessions)
-	mux.HandleFunc("POST /api/agents/{id}/channels/weixin/pairing-sessions", h.CreatePairingSession)
-	mux.HandleFunc("GET /api/agents/{id}/channels/weixin/pairing-sessions/{sessionId}", h.GetPairingSession)
+func (h *WeixinHandlers) Register(router gin.IRoutes) {
+	router.GET("/agents/:id/channels/weixin", h.GetChannel)
+	router.PUT("/agents/:id/channels/weixin", h.PutChannel)
+	router.DELETE("/agents/:id/channels/weixin", h.DeleteChannel)
+	router.GET("/agents/:id/channels/weixin/pairing-sessions", h.ListPairingSessions)
+	router.POST("/agents/:id/channels/weixin/pairing-sessions", h.CreatePairingSession)
+	router.GET("/agents/:id/channels/weixin/pairing-sessions/:sessionId", h.GetPairingSession)
 }
 
-func (h *WeixinHandlers) GetChannel(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *WeixinHandlers) GetChannel(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	channel, err := h.channelRepo.GetByAgentID(r.Context(), agent.ID)
+	channel, err := h.channelRepo.GetByAgentID(c.Request.Context(), agent.ID)
 	if errors.Is(err, channels.ErrNotFound) {
-		writeJSON(w, http.StatusOK, channelResponse{Channel: channelDTO{Status: channels.StatusNotConfigured, ChannelType: channels.TypeWeixin}})
+		writeJSON(c, http.StatusOK, channelResponse{Channel: channelDTO{Status: channels.StatusNotConfigured, ChannelType: channels.TypeWeixin}})
 		return
 	}
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, channelResponse{Channel: newChannelDTO(channel)})
+	writeJSON(c, http.StatusOK, channelResponse{Channel: newChannelDTO(channel)})
 }
 
-func (h *WeixinHandlers) PutChannel(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *WeixinHandlers) PutChannel(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	channel, err := h.channels.EnsureWeixinChannel(r.Context(), agent.ID)
+	channel, err := h.channels.EnsureWeixinChannel(c.Request.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, channelResponse{Channel: newChannelDTO(channel)})
+	writeJSON(c, http.StatusOK, channelResponse{Channel: newChannelDTO(channel)})
 }
 
-func (h *WeixinHandlers) DeleteChannel(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.authorizeAgent(w, r); !ok {
+func (h *WeixinHandlers) DeleteChannel(c *gin.Context) {
+	if _, ok := h.authorizeAgent(c); !ok {
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *WeixinHandlers) CreatePairingSession(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *WeixinHandlers) CreatePairingSession(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	channel, err := h.channels.EnsureWeixinChannel(r.Context(), agent.ID)
+	channel, err := h.channels.EnsureWeixinChannel(c.Request.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
-	session, _, created, err := h.channelJobs.CreateOrReuseConnectJob(r.Context(), channel.ID, nowPlusFiveMinutes())
+	session, _, created, err := h.channelJobs.CreateOrReuseConnectJob(c.Request.Context(), channel.ID, nowPlusFiveMinutes())
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
 	status := http.StatusCreated
 	if !created {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, pairingSessionResponse{Session: h.toPairingSessionDTO(session)})
+	writeJSON(c, status, pairingSessionResponse{Session: h.toPairingSessionDTO(session)})
 }
 
-func (h *WeixinHandlers) ListPairingSessions(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *WeixinHandlers) ListPairingSessions(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	channel, err := h.channelRepo.GetByAgentID(r.Context(), agent.ID)
+	channel, err := h.channelRepo.GetByAgentID(c.Request.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
-	sessions, err := h.channelRepo.ListPairingSessions(r.Context(), channel.ID)
+	sessions, err := h.channelRepo.ListPairingSessions(c.Request.Context(), channel.ID)
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
 	result := make([]pairingSessionDTO, 0, len(sessions))
 	for _, session := range sessions {
 		result = append(result, h.toPairingSessionDTO(session))
 	}
-	writeJSON(w, http.StatusOK, pairingSessionsResponse{Sessions: result})
+	writeJSON(c, http.StatusOK, pairingSessionsResponse{Sessions: result})
 }
 
-func (h *WeixinHandlers) GetPairingSession(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *WeixinHandlers) GetPairingSession(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	channel, err := h.channelRepo.GetByAgentID(r.Context(), agent.ID)
+	channel, err := h.channelRepo.GetByAgentID(c.Request.Context(), agent.ID)
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
-	session, err := h.channelRepo.GetPairingSessionByID(r.Context(), channel.ID, r.PathValue("sessionId"))
+	session, err := h.channelRepo.GetPairingSessionByID(c.Request.Context(), channel.ID, c.Param("sessionId"))
 	if err != nil {
-		writeWeixinError(w, r, err)
+		writeWeixinError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, pairingSessionResponse{Session: h.toPairingSessionDTO(session)})
+	writeJSON(c, http.StatusOK, pairingSessionResponse{Session: h.toPairingSessionDTO(session)})
 }
 
 type channelResponse struct {
@@ -188,19 +189,19 @@ func (h *WeixinHandlers) toPairingSessionDTO(session channels.PairingSession) pa
 	return dto
 }
 
-func (h *WeixinHandlers) authorizeAgent(w http.ResponseWriter, r *http.Request) (agents.Agent, bool) {
-	user, ok := requireAuthenticatedUser(w, r)
+func (h *WeixinHandlers) authorizeAgent(c *gin.Context) (agents.Agent, bool) {
+	user, ok := requireAuthenticatedUser(c)
 	if !ok {
 		return agents.Agent{}, false
 	}
-	agent, err := h.agents.Get(r.Context(), r.PathValue("id"))
+	agent, err := h.agents.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeAgentError(w, r, err)
+		writeAgentError(c, err)
 		return agents.Agent{}, false
 	}
 	if err := auth.RequireAgentOwner(user, agent.OwnerUserID); err != nil {
 		status, code, message := mapAuthzError(err)
-		writeAuthError(w, status, code, message)
+		writeAuthError(c, status, code, message)
 		return agents.Agent{}, false
 	}
 	return agent, true

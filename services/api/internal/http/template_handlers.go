@@ -8,6 +8,7 @@ import (
 
 	"agentforge.local/services/api/internal/auth"
 	"agentforge.local/services/api/internal/templates"
+	"github.com/gin-gonic/gin"
 )
 
 type TemplateHandlers struct {
@@ -18,272 +19,301 @@ func NewTemplateHandlers(service *templates.Service) *TemplateHandlers {
 	return &TemplateHandlers{service: service}
 }
 
-func (h *TemplateHandlers) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/templates", h.ListPublished)
-	mux.HandleFunc("GET /api/templates/{id}", h.GetPublished)
-	mux.HandleFunc("GET /api/admin/templates", h.ListAdmin)
-	mux.HandleFunc("GET /api/admin/templates/{id}", h.GetAdmin)
-	mux.HandleFunc("POST /api/admin/templates", h.Create)
-	mux.HandleFunc("PUT /api/admin/templates/{id}", h.UpdateMetadata)
-	mux.HandleFunc("DELETE /api/admin/templates/{id}", h.Archive)
-	mux.HandleFunc("GET /api/admin/templates/{id}/soul", h.GetSoul)
-	mux.HandleFunc("PUT /api/admin/templates/{id}/soul", h.PutSoul)
-	mux.HandleFunc("GET /api/admin/templates/{id}/user", h.GetUser)
-	mux.HandleFunc("PUT /api/admin/templates/{id}/user", h.PutUser)
-	mux.HandleFunc("GET /api/admin/templates/{id}/skills", h.ListSkills)
-	mux.HandleFunc("POST /api/admin/templates/{id}/skills", h.AddSkill)
-	mux.HandleFunc("GET /api/admin/templates/{id}/skills/{skillId}", h.GetSkill)
-	mux.HandleFunc("DELETE /api/admin/templates/{id}/skills/{skillId}", h.DeleteSkill)
-	mux.HandleFunc("PUT /api/admin/templates/{id}/publication", h.Publish)
-	mux.HandleFunc("DELETE /api/admin/templates/{id}/publication", h.Unpublish)
+func (h *TemplateHandlers) Register(router gin.IRoutes) {
+	router.GET("/templates", h.ListPublished)
+	router.GET("/templates/:id", h.GetPublished)
+	router.GET("/admin/templates", h.ListAdmin)
+	router.GET("/admin/templates/:id", h.GetAdmin)
+	router.POST("/admin/templates", h.Create)
+	router.PUT("/admin/templates/:id", h.UpdateMetadata)
+	router.DELETE("/admin/templates/:id", h.Delete)
+	router.DELETE("/admin/templates/:id/archive", h.Archive)
+	router.GET("/admin/templates/:id/soul", h.GetSoul)
+	router.PUT("/admin/templates/:id/soul", h.PutSoul)
+	router.GET("/admin/templates/:id/user", h.GetUser)
+	router.PUT("/admin/templates/:id/user", h.PutUser)
+	router.GET("/admin/templates/:id/skills", h.ListSkills)
+	router.POST("/admin/templates/:id/skills", h.AddSkill)
+	router.GET("/admin/templates/:id/skills/:skillId", h.GetSkill)
+	router.DELETE("/admin/templates/:id/skills/:skillId", h.DeleteSkill)
+	router.PUT("/admin/templates/:id/publication", h.Publish)
+	router.DELETE("/admin/templates/:id/publication", h.Unpublish)
 }
 
-func (h *TemplateHandlers) ListPublished(w http.ResponseWriter, r *http.Request) {
-	templateList, err := h.service.ListPublished(r.Context())
+func (h *TemplateHandlers) ListPublished(c *gin.Context) {
+	templateList, err := h.service.ListPublished(c.Request.Context())
 	if err != nil {
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
+	writeJSON(c, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
 }
 
-func (h *TemplateHandlers) GetPublished(w http.ResponseWriter, r *http.Request) {
-	template, err := h.service.Get(r.Context(), r.PathValue("id"))
+func (h *TemplateHandlers) GetPublished(c *gin.Context) {
+	template, err := h.service.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
 	if template.Status != templates.StatusPublished {
-		writeErrorWithMsg(w, http.StatusNotFound, "not_found", "template not published")
+		writeErrorWithMsg(c, http.StatusNotFound, "not_found", "template not published")
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
-func (h *TemplateHandlers) ListAdmin(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) ListAdmin(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	templateList, err := h.service.ListAdmin(r.Context())
+	templateList, err := h.service.ListAdmin(c.Request.Context())
 	if err != nil {
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
+	writeJSON(c, http.StatusOK, map[string]any{"templates": templateDTOs(templateList)})
 }
 
-func (h *TemplateHandlers) GetAdmin(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) GetAdmin(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	template, err := h.service.Get(r.Context(), r.PathValue("id"))
+	template, err := h.service.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
-func (h *TemplateHandlers) Create(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAdminUser(w, r)
+func (h *TemplateHandlers) Create(c *gin.Context) {
+	user, ok := requireAdminUser(c)
 	if !ok {
 		return
 	}
-	request, err := decodeTemplateCreateRequest(r)
-	if err != nil {
-		writeTemplateError(w, r, err)
+
+	// 先解析 multipart 表单
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+		writeTemplateError(c, fmt.Errorf("%w: failed to parse multipart form: %v", templates.ErrInvalidInput, err))
 		return
 	}
-	template, err := h.service.CreateWithContents(r.Context(), templates.CreateTemplateParams{
+
+	// 然后获取表单值
+	name := c.Request.FormValue("name")
+	description := c.Request.FormValue("description")
+	soulContent := c.Request.FormValue("soulContent")
+	userContent := c.Request.FormValue("userContent")
+
+	var skillArchives []templates.SkillArchive
+	if c.Request.MultipartForm != nil {
+		files := c.Request.MultipartForm.File["skillZips"]
+		for _, header := range files {
+			archive, err := readMultipartSkillArchive(header)
+			if err != nil {
+				writeTemplateError(c, err)
+				return
+			}
+			skillArchives = append(skillArchives, archive)
+		}
+	}
+
+	template, err := h.service.CreateWithContents(c.Request.Context(), templates.CreateTemplateParams{
 		CreatedBy:     user.ID,
-		Name:          request.Name,
-		Description:   request.Description,
-		SoulContent:   request.SoulContent,
-		UserContent:   request.UserContent,
-		SkillArchives: request.SkillArchives,
+		Name:          name,
+		Description:   description,
+		SoulContent:   soulContent,
+		UserContent:   userContent,
+		SkillArchives: skillArchives,
 	})
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusCreated, templateResponse{Template: newTemplateDTO(template)})
 }
 
-func (h *TemplateHandlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) UpdateMetadata(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
 	var request struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
-	if !decodeRequest(w, r, &request) {
+	if !decodeRequest(c, &request) {
 		return
 	}
-	template, err := h.service.UpdateMetadata(r.Context(), r.PathValue("id"), request.Name, request.Description)
+	template, err := h.service.UpdateMetadata(c.Request.Context(), c.Param("id"), request.Name, request.Description)
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
-func (h *TemplateHandlers) Archive(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) Archive(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	if _, err := h.service.Archive(r.Context(), r.PathValue("id")); err != nil {
-		writeTemplateError(w, r, err)
+	if _, err := h.service.Archive(c.Request.Context(), c.Param("id")); err != nil {
+		writeTemplateError(c, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *TemplateHandlers) GetSoul(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) Delete(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	content, err := h.service.Soul(r.Context(), r.PathValue("id"))
+	if err := h.service.Delete(c.Request.Context(), c.Param("id")); err != nil {
+		writeTemplateError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *TemplateHandlers) GetSoul(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
+		return
+	}
+	content, err := h.service.Soul(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contentResponse{Content: content})
+	writeJSON(c, http.StatusOK, contentResponse{Content: content})
 }
 
-func (h *TemplateHandlers) PutSoul(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) PutSoul(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
 	var request contentResponse
-	if !decodeRequest(w, r, &request) {
+	if !decodeRequest(c, &request) {
 		return
 	}
-	template, err := h.service.PutSoul(r.Context(), r.PathValue("id"), request.Content)
+	template, err := h.service.PutSoul(c.Request.Context(), c.Param("id"), request.Content)
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
-func (h *TemplateHandlers) GetUser(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) GetUser(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	content, err := h.service.User(r.Context(), r.PathValue("id"))
+	content, err := h.service.User(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contentResponse{Content: content})
+	writeJSON(c, http.StatusOK, contentResponse{Content: content})
 }
 
-func (h *TemplateHandlers) PutUser(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) PutUser(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
 	var request contentResponse
-	if !decodeRequest(w, r, &request) {
+	if !decodeRequest(c, &request) {
 		return
 	}
-	template, err := h.service.PutUser(r.Context(), r.PathValue("id"), request.Content)
+	template, err := h.service.PutUser(c.Request.Context(), c.Param("id"), request.Content)
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
-func (h *TemplateHandlers) ListSkills(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) ListSkills(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	skills, err := h.service.ListSkills(r.Context(), r.PathValue("id"))
+	skills, err := h.service.ListSkills(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"skills": skillDTOs(skills)})
+	writeJSON(c, http.StatusOK, map[string]any{"skills": skillDTOs(skills)})
 }
 
-func (h *TemplateHandlers) AddSkill(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) AddSkill(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	if err := r.ParseMultipartForm(16 << 20); err != nil {
-		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "failed to parse multipart form: "+err.Error())
-		return
-	}
-	file, _, err := r.FormFile("file")
+	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "missing or invalid 'file' field: "+err.Error())
+		writeErrorWithMsg(c, http.StatusBadRequest, "invalid_request", "missing or invalid 'file' field: "+err.Error())
 		return
 	}
 	defer file.Close()
 	archive, err := io.ReadAll(file)
 	if err != nil {
-		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "failed to read file: "+err.Error())
+		writeErrorWithMsg(c, http.StatusBadRequest, "invalid_request", "failed to read file: "+err.Error())
 		return
 	}
-	skill, err := h.service.AddSkillArchive(r.Context(), r.PathValue("id"), archive)
+	skill, err := h.service.AddSkillArchive(c.Request.Context(), c.Param("id"), archive)
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, skillResponse{Skill: newSkillDTO(skill)})
+	writeJSON(c, http.StatusCreated, skillResponse{Skill: newSkillDTO(skill)})
 }
 
-func (h *TemplateHandlers) GetSkill(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) GetSkill(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	skill, content, err := h.service.GetSkill(r.Context(), r.PathValue("id"), r.PathValue("skillId"))
+	skill, content, err := h.service.GetSkill(c.Request.Context(), c.Param("id"), c.Param("skillId"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, skillResponse{Skill: newSkillDTO(skill), Content: content})
+	writeJSON(c, http.StatusOK, skillResponse{Skill: newSkillDTO(skill), Content: content})
 }
 
-func (h *TemplateHandlers) DeleteSkill(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) DeleteSkill(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	result, err := h.service.DeleteSkill(r.Context(), r.PathValue("id"), r.PathValue("skillId"))
+	result, err := h.service.DeleteSkill(c.Request.Context(), c.Param("id"), c.Param("skillId"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
 	if result.Cloned {
-		writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(result.Template)})
+		writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(result.Template)})
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *TemplateHandlers) Publish(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) Publish(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	template, err := h.service.Publish(r.Context(), r.PathValue("id"))
+	template, err := h.service.Publish(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
-func (h *TemplateHandlers) Unpublish(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdminUser(w, r); !ok {
+func (h *TemplateHandlers) Unpublish(c *gin.Context) {
+	if _, ok := requireAdminUser(c); !ok {
 		return
 	}
-	template, err := h.service.Unpublish(r.Context(), r.PathValue("id"))
+	template, err := h.service.Unpublish(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeTemplateError(w, r, err)
+		writeTemplateError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
+	writeJSON(c, http.StatusOK, templateResponse{Template: newTemplateDTO(template)})
 }
 
 type templateResponse struct {
@@ -292,14 +322,6 @@ type templateResponse struct {
 
 type contentResponse struct {
 	Content string `json:"content"`
-}
-
-type createTemplateRequest struct {
-	Name          string
-	Description   string
-	SoulContent   string
-	UserContent   string
-	SkillArchives []templates.SkillArchive
 }
 
 type skillResponse struct {
@@ -365,48 +387,24 @@ func skillDTOs(skills []templates.Skill) []skillDTO {
 	return result
 }
 
-func requireAdminUser(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
-	user, ok := UserFromContext(r.Context())
+func requireAdminUser(c *gin.Context) (auth.User, bool) {
+	user, ok := UserFromContext(c)
 	if !ok {
-		writeAuthError(w, http.StatusUnauthorized, "unauthorized", publicMessageForCode("unauthorized"))
+		writeAuthError(c, http.StatusUnauthorized, "unauthorized", publicMessageForCode("unauthorized"))
 		return auth.User{}, false
 	}
 	if err := auth.RequireAdmin(user); err != nil {
 		status, code, message := mapAuthzError(err)
-		writeAuthError(w, status, code, message)
+		writeAuthError(c, status, code, message)
 		return auth.User{}, false
 	}
 	return user, true
 }
 
 
-func decodeTemplateCreateRequest(r *http.Request) (createTemplateRequest, error) {
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		return createTemplateRequest{}, fmt.Errorf("%w: failed to parse multipart form: %v", templates.ErrInvalidInput, err)
-	}
-	request := createTemplateRequest{
-		Name:        r.FormValue("name"),
-		Description: r.FormValue("description"),
-		SoulContent: r.FormValue("soulContent"),
-		UserContent: r.FormValue("userContent"),
-	}
-	if r.MultipartForm == nil {
-		return request, nil
-	}
-	files := r.MultipartForm.File["skillZips"]
-	for _, header := range files {
-		archive, err := readMultipartSkillArchive(header)
-		if err != nil {
-			return createTemplateRequest{}, err
-		}
-		request.SkillArchives = append(request.SkillArchives, archive)
-	}
-	return request, nil
-}
-
 func readMultipartSkillArchive(header *multipart.FileHeader) (templates.SkillArchive, error) {
 	if header == nil {
-		return templates.SkillArchive{}, templates.ErrInvalidInput
+		return templates.SkillArchive{}, fmt.Errorf("%w: missing file header", templates.ErrInvalidInput)
 	}
 	file, err := header.Open()
 	if err != nil {

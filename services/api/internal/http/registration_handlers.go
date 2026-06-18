@@ -1,12 +1,11 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 
 	"agentforge.local/services/api/internal/auth"
+	"github.com/gin-gonic/gin"
 )
 
 type RegistrationHandlers struct {
@@ -17,24 +16,20 @@ func NewRegistrationHandlers(authRepository AuthRepository) *RegistrationHandler
 	return &RegistrationHandlers{authRepository: authRepository}
 }
 
-func (h *RegistrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
+func (h *RegistrationHandlers) Register(router gin.IRoutes) {
+	router.POST("/users", h.Create)
+}
+
+func (h *RegistrationHandlers) Create(c *gin.Context) {
 	var request struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&request); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_json", publicMessageForCode("invalid_json"), nil)
-		return
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		writeAPIError(w, http.StatusBadRequest, "invalid_json", "extra fields in request body", nil)
+	if !decodeRequest(c, &request) {
 		return
 	}
 
-	user, err := h.authRepository.CreateUser(r.Context(), auth.CreateUserParams{
+	user, err := h.authRepository.CreateUser(c.Request.Context(), auth.CreateUserParams{
 		Email:    request.Email,
 		Password: request.Password,
 		Role:     auth.RoleUser,
@@ -42,18 +37,18 @@ func (h *RegistrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrInvalidEmail):
-			writeError(w, http.StatusBadRequest, "invalid_email")
+			writeError(c, http.StatusBadRequest, "invalid_email")
 		case errors.Is(err, auth.ErrInvalidPassword):
-			writeError(w, http.StatusBadRequest, "invalid_password")
+			writeError(c, http.StatusBadRequest, "invalid_password")
 		case errors.Is(err, auth.ErrEmailAlreadyExists):
-			writeError(w, http.StatusConflict, "email_already_exists")
+			writeError(c, http.StatusConflict, "email_already_exists")
 		case errors.Is(err, auth.ErrEmailLookupAmbiguous):
-			writeError(w, http.StatusConflict, "email_conflict")
+			writeError(c, http.StatusConflict, "email_conflict")
 		default:
-			writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+			writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, userResponse{User: user})
+	writeJSON(c, http.StatusCreated, userResponse{User: user})
 }

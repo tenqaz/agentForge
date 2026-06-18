@@ -2,13 +2,13 @@ package http
 
 import (
 	"context"
-	"net/http"
 
 	"agentforge.local/services/api/internal/agents"
 	"agentforge.local/services/api/internal/auth"
 	"agentforge.local/services/api/internal/channels"
 	"agentforge.local/services/api/internal/jobs"
 	"agentforge.local/services/api/internal/templates"
+	"github.com/gin-gonic/gin"
 )
 
 type AuthRepository interface {
@@ -29,33 +29,31 @@ type Dependencies struct {
 	ChannelJobRepository *jobs.ChannelRepository
 }
 
-func NewRouter(deps Dependencies) http.Handler {
-	mux := http.NewServeMux()
-	NewHealthHandlers().Register(mux)
-	if deps.AuthRepository != nil {
-		registrationHandlers := NewRegistrationHandlers(deps.AuthRepository)
-		mux.HandleFunc("POST /api/users", registrationHandlers.Create)
+func NewRouter(deps Dependencies) *gin.Engine {
+	r := gin.New()
+	r.Use(RequestIDMiddleware(), RecoverMiddleware())
+	if deps.SessionManager != nil && deps.AuthRepository != nil {
+		r.Use(SessionMiddleware(deps.SessionManager, deps.AuthRepository))
 	}
-	sessionHandlers := NewSessionHandlers(deps.AuthRepository, deps.SessionManager)
-	mux.HandleFunc("POST /api/sessions", sessionHandlers.Create)
-	mux.HandleFunc("GET /api/session", sessionHandlers.Current)
-	mux.HandleFunc("DELETE /api/session", sessionHandlers.Delete)
+
+	api := r.Group("/api")
+	NewHealthHandlers().Register(api)
+
+	if deps.AuthRepository != nil {
+		NewRegistrationHandlers(deps.AuthRepository).Register(api)
+	}
+
+	NewSessionHandlers(deps.AuthRepository, deps.SessionManager).Register(api)
+
 	if deps.TemplateService != nil {
-		templateHandlers := NewTemplateHandlers(deps.TemplateService)
-		templateHandlers.Register(mux)
+		NewTemplateHandlers(deps.TemplateService).Register(api)
 	}
 	if deps.AgentService != nil && deps.RuntimeJobRepository != nil {
-		agentHandlers := NewAgentHandlers(deps.AgentService, deps.RuntimeJobRepository)
-		agentHandlers.Register(mux)
+		NewAgentHandlers(deps.AgentService, deps.RuntimeJobRepository).Register(api)
 	}
 	if deps.AgentService != nil && deps.ChannelService != nil && deps.ChannelRepository != nil && deps.ChannelJobRepository != nil {
-		weixinHandlers := NewWeixinHandlers(deps.AgentService, deps.ChannelService, deps.ChannelRepository, deps.ChannelJobRepository)
-		weixinHandlers.Register(mux)
+		NewWeixinHandlers(deps.AgentService, deps.ChannelService, deps.ChannelRepository, deps.ChannelJobRepository).Register(api)
 	}
-	handler := http.Handler(mux)
-	if deps.SessionManager != nil && deps.AuthRepository != nil {
-		handler = SessionMiddleware(deps.SessionManager, deps.AuthRepository)(handler)
-	}
-	handler = RecoverMiddleware(handler)
-	return RequestIDMiddleware(handler)
+
+	return r
 }

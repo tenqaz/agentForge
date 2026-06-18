@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -97,11 +98,11 @@ func (m *SessionManager) parse(token string) (SessionClaims, error) {
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(encodedPayload)
 	if err != nil {
-		return SessionClaims{}, ErrInvalidSession
+		return SessionClaims{}, fmt.Errorf("%w: %v", ErrInvalidSession, err)
 	}
 	var claims SessionClaims
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return SessionClaims{}, ErrInvalidSession
+		return SessionClaims{}, fmt.Errorf("%w: %v", ErrInvalidSession, err)
 	}
 	if claims.UserID == "" {
 		return SessionClaims{}, ErrInvalidSession

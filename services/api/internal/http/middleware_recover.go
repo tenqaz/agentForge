@@ -1,14 +1,10 @@
 package http
 
-import "net/http"
+import "github.com/gin-gonic/gin"
 
-func RecoverMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				recoverPanic(w, r, recovered)
-			}
-		}()
-		next.ServeHTTP(w, r)
+func RecoverMiddleware() gin.HandlerFunc {
+	return gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		recoverPanic(c, recovered)
+		c.Abort()
 	})
 }

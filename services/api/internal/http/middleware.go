@@ -1,32 +1,30 @@
 package http
 
 import (
-	"context"
-	"net/http"
-
 	"agentforge.local/services/api/internal/auth"
+	"github.com/gin-gonic/gin"
 )
 
-type contextKey string
+const userContextKey = "user"
 
-const userContextKey contextKey = "user"
-
-func SessionMiddleware(manager *auth.SessionManager, authRepository AuthRepository) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, err := manager.ParseRequest(r)
+func SessionMiddleware(manager *auth.SessionManager, authRepository AuthRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, err := manager.ParseRequest(c.Request)
+		if err == nil {
+			user, err := authRepository.FindUserByID(c.Request.Context(), claims.UserID)
 			if err == nil {
-				user, err := authRepository.FindUserByID(r.Context(), claims.UserID)
-				if err == nil {
-					r = r.WithContext(context.WithValue(r.Context(), userContextKey, user))
-				}
+				c.Set(userContextKey, user)
 			}
-			next.ServeHTTP(w, r)
-		})
+		}
+		c.Next()
 	}
 }
 
-func UserFromContext(ctx context.Context) (auth.User, bool) {
-	user, ok := ctx.Value(userContextKey).(auth.User)
-	return user, ok
+func UserFromContext(c *gin.Context) (auth.User, bool) {
+	user, ok := c.Get(userContextKey)
+	if !ok {
+		return auth.User{}, false
+	}
+	typed, ok := user.(auth.User)
+	return typed, ok
 }

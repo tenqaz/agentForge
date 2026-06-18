@@ -110,7 +110,7 @@ func (w *RuntimeWorker) ProcessJob(ctx context.Context, jobID string) error {
 		}
 		return nil
 	default:
-		return ErrInvalidInput
+		return fmt.Errorf("%w: unsupported job type: %q", ErrInvalidInput, job.Type)
 	}
 }
 

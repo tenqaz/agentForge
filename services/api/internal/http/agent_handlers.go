@@ -6,6 +6,7 @@ import (
 	"agentforge.local/services/api/internal/agents"
 	"agentforge.local/services/api/internal/auth"
 	"agentforge.local/services/api/internal/jobs"
+	"github.com/gin-gonic/gin"
 )
 
 type AgentHandlers struct {
@@ -17,18 +18,18 @@ func NewAgentHandlers(service *agents.Service, runtimeJobs *jobs.RuntimeReposito
 	return &AgentHandlers{service: service, runtimeJobs: runtimeJobs}
 }
 
-func (h *AgentHandlers) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/agents", h.Create)
-	mux.HandleFunc("GET /api/agents", h.List)
-	mux.HandleFunc("GET /api/agents/{id}", h.Get)
-	mux.HandleFunc("GET /api/agents/{id}/runtime", h.GetRuntime)
-	mux.HandleFunc("GET /api/agents/{id}/runtime-jobs", h.ListRuntimeJobs)
-	mux.HandleFunc("POST /api/agents/{id}/runtime-jobs", h.CreateRuntimeJob)
-	mux.HandleFunc("GET /api/agents/{id}/runtime-jobs/{jobId}", h.GetRuntimeJob)
+func (h *AgentHandlers) Register(router gin.IRoutes) {
+	router.POST("/agents", h.Create)
+	router.GET("/agents", h.List)
+	router.GET("/agents/:id", h.Get)
+	router.GET("/agents/:id/runtime", h.GetRuntime)
+	router.GET("/agents/:id/runtime-jobs", h.ListRuntimeJobs)
+	router.POST("/agents/:id/runtime-jobs", h.CreateRuntimeJob)
+	router.GET("/agents/:id/runtime-jobs/:jobId", h.GetRuntimeJob)
 }
 
-func (h *AgentHandlers) Create(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthenticatedUser(w, r)
+func (h *AgentHandlers) Create(c *gin.Context) {
+	user, ok := requireAuthenticatedUser(c)
 	if !ok {
 		return
 	}
@@ -37,24 +38,24 @@ func (h *AgentHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		TemplateID string `json:"templateId"`
 		Name       string `json:"name"`
 	}
-	if !decodeRequest(w, r, &request) {
+	if !decodeRequest(c, &request) {
 		return
 	}
 
-	agent, err := h.service.Create(r.Context(), agents.CreateParams{
+	agent, err := h.service.Create(c.Request.Context(), agents.CreateParams{
 		OwnerUserID: user.ID,
 		TemplateID:  request.TemplateID,
 		Name:        request.Name,
 	})
 	if err != nil {
-		writeAgentError(w, r, err)
+		writeAgentError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, agentResponse{Agent: newAgentDTO(agent)})
+	writeJSON(c, http.StatusCreated, agentResponse{Agent: newAgentDTO(agent)})
 }
 
-func (h *AgentHandlers) List(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthenticatedUser(w, r)
+func (h *AgentHandlers) List(c *gin.Context) {
+	user, ok := requireAuthenticatedUser(c)
 	if !ok {
 		return
 	}
@@ -64,53 +65,53 @@ func (h *AgentHandlers) List(w http.ResponseWriter, r *http.Request) {
 		err       error
 	)
 	if user.Role == auth.RoleAdmin {
-		agentList, err = h.service.List(r.Context())
+		agentList, err = h.service.List(c.Request.Context())
 	} else {
-		agentList, err = h.service.ListByOwner(r.Context(), user.ID)
+		agentList, err = h.service.ListByOwner(c.Request.Context(), user.ID)
 	}
 	if err != nil {
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"agents": agentDTOs(agentList)})
+	writeJSON(c, http.StatusOK, map[string]any{"agents": agentDTOs(agentList)})
 }
 
-func (h *AgentHandlers) Get(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *AgentHandlers) Get(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, agentResponse{Agent: newAgentDTO(agent)})
+	writeJSON(c, http.StatusOK, agentResponse{Agent: newAgentDTO(agent)})
 }
 
-func (h *AgentHandlers) GetRuntime(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *AgentHandlers) GetRuntime(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	runtime, err := h.service.Runtime(r.Context(), agent.ID)
+	runtime, err := h.service.Runtime(c.Request.Context(), agent.ID)
 	if err != nil {
-		writeAgentError(w, r, err)
+		writeAgentError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, runtimeResponse{Runtime: newAgentRuntimeDTO(runtime)})
+	writeJSON(c, http.StatusOK, runtimeResponse{Runtime: newAgentRuntimeDTO(runtime)})
 }
 
-func (h *AgentHandlers) ListRuntimeJobs(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *AgentHandlers) ListRuntimeJobs(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	runtimeJobs, err := h.runtimeJobs.ListByAgent(r.Context(), agent.ID)
+	runtimeJobs, err := h.runtimeJobs.ListByAgent(c.Request.Context(), agent.ID)
 	if err != nil {
-		writeInternalError(w, r, http.StatusInternalServerError, "internal_error", "", err)
+		writeInternalError(c, http.StatusInternalServerError, "internal_error", "", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"jobs": runtimeJobDTOs(runtimeJobs)})
+	writeJSON(c, http.StatusOK, map[string]any{"jobs": runtimeJobDTOs(runtimeJobs)})
 }
 
-func (h *AgentHandlers) CreateRuntimeJob(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *AgentHandlers) CreateRuntimeJob(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
@@ -118,33 +119,33 @@ func (h *AgentHandlers) CreateRuntimeJob(w http.ResponseWriter, r *http.Request)
 	var request struct {
 		Type jobs.Type `json:"type"`
 	}
-	if !decodeRequest(w, r, &request) {
+	if !decodeRequest(c, &request) {
 		return
 	}
 	if request.Type != jobs.TypeRestartRuntime {
-		writeErrorWithMsg(w, http.StatusBadRequest, "invalid_request", "only restart_runtime type is supported")
+		writeErrorWithMsg(c, http.StatusBadRequest, "invalid_request", "only restart_runtime type is supported")
 		return
 	}
 
-	job, err := h.service.CreateRuntimeJob(r.Context(), agent.ID, request.Type)
+	job, err := h.service.CreateRuntimeJob(c.Request.Context(), agent.ID, request.Type)
 	if err != nil {
-		writeRuntimeJobError(w, r, err)
+		writeRuntimeJobError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
+	writeJSON(c, http.StatusCreated, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
 }
 
-func (h *AgentHandlers) GetRuntimeJob(w http.ResponseWriter, r *http.Request) {
-	agent, ok := h.authorizeAgent(w, r)
+func (h *AgentHandlers) GetRuntimeJob(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
 	if !ok {
 		return
 	}
-	job, err := h.runtimeJobs.GetByID(r.Context(), agent.ID, r.PathValue("jobId"))
+	job, err := h.runtimeJobs.GetByID(c.Request.Context(), agent.ID, c.Param("jobId"))
 	if err != nil {
-		writeRuntimeJobError(w, r, err)
+		writeRuntimeJobError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
+	writeJSON(c, http.StatusOK, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
 }
 
 type agentResponse struct {
@@ -261,28 +262,28 @@ func runtimeJobDTOs(jobsList []jobs.RuntimeJob) []runtimeJobDTO {
 	return result
 }
 
-func (h *AgentHandlers) authorizeAgent(w http.ResponseWriter, r *http.Request) (agents.Agent, bool) {
-	user, ok := requireAuthenticatedUser(w, r)
+func (h *AgentHandlers) authorizeAgent(c *gin.Context) (agents.Agent, bool) {
+	user, ok := requireAuthenticatedUser(c)
 	if !ok {
 		return agents.Agent{}, false
 	}
-	agent, err := h.service.Get(r.Context(), r.PathValue("id"))
+	agent, err := h.service.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		writeAgentError(w, r, err)
+		writeAgentError(c, err)
 		return agents.Agent{}, false
 	}
 	if err := auth.RequireAgentOwner(user, agent.OwnerUserID); err != nil {
 		status, code, message := mapAuthzError(err)
-		writeAuthError(w, status, code, message)
+		writeAuthError(c, status, code, message)
 		return agents.Agent{}, false
 	}
 	return agent, true
 }
 
-func requireAuthenticatedUser(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
-	user, ok := UserFromContext(r.Context())
+func requireAuthenticatedUser(c *gin.Context) (auth.User, bool) {
+	user, ok := UserFromContext(c)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+		writeError(c, http.StatusUnauthorized, "unauthorized")
 		return auth.User{}, false
 	}
 	return user, true

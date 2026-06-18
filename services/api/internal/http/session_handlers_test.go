@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"agentforge.local/services/api/internal/auth"
+	"github.com/gin-gonic/gin"
 
 	_ "modernc.org/sqlite"
 )
@@ -188,15 +189,17 @@ func TestSessionMiddlewareAddsAuthenticatedUser(t *testing.T) {
 	}
 
 	var got auth.User
-	handler := SessionMiddleware(manager, auth.NewRepository(database))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, _ = UserFromContext(r.Context())
-		w.WriteHeader(http.StatusNoContent)
-	}))
+	router := gin.New()
+	router.Use(SessionMiddleware(manager, auth.NewRepository(database)))
+	router.GET("/", func(c *gin.Context) {
+		got, _ = UserFromContext(c)
+		c.Status(http.StatusNoContent)
+	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.AddCookie(cookieRecorder.Result().Cookies()[0])
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
+	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("middleware status = %d", recorder.Code)
 	}

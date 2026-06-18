@@ -5,15 +5,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestRecoverMiddlewareReturnsInternalErrorResponse(t *testing.T) {
-	handler := RequestIDMiddleware(RecoverMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := gin.New()
+	router.Use(RequestIDMiddleware(), RecoverMiddleware())
+	router.GET("/panic", func(c *gin.Context) {
 		panic("boom")
-	})))
+	})
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/panic", nil))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/panic", nil))
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())

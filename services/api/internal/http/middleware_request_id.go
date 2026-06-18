@@ -1,16 +1,17 @@
 package http
 
 import (
-	"net/http"
-
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-// RequestIDMiddleware 为每个请求添加唯一 ID
-func RequestIDMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+const requestIDContextKey = "request_id"
+
+func RequestIDMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		requestID := uuid.New().String()
-		w.Header().Set("X-Request-ID", requestID)
-		next.ServeHTTP(w, r)
-	})
+		c.Set(requestIDContextKey, requestID)
+		c.Writer.Header().Set("X-Request-ID", requestID)
+		c.Next()
+	}
 }

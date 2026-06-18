@@ -61,7 +61,7 @@ func (w *ChannelWorker) ProcessJob(ctx context.Context, jobID string) error {
 		return fmt.Errorf("load channel job context: %w", err)
 	}
 	if job.Type != TypeConnectWeixin {
-		return ErrInvalidInput
+		return fmt.Errorf("%w: unsupported channel job type: %q", ErrInvalidInput, job.Type)
 	}
 	if agent.Status != "running" {
 		_ = w.fail(ctx, job.ID, channel.ID, "agent_not_running", "agent is not running", channels.StatusNotConfigured)

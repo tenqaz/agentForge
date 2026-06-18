@@ -8,3 +8,4 @@ web/.env.local
 docs
 .data
 .agents
+.vscode

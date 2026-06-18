@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +15,15 @@ import (
 	"github.com/google/uuid"
 )
 
+// AgentChecker defines the interface for checking if a template is in use by agents.
+type AgentChecker interface {
+	HasAgentsForTemplate(ctx context.Context, templateID string) (bool, error)
+}
+
 type Service struct {
-	repository *Repository
-	store      *FileStore
+	repository   *Repository
+	store        *FileStore
+	agentChecker AgentChecker
 }
 
 type DeleteSkillResult struct {
@@ -23,14 +31,22 @@ type DeleteSkillResult struct {
 	Cloned   bool
 }
 
-func NewService(repository *Repository, store *FileStore) *Service {
-	return &Service{repository: repository, store: store}
+func NewService(repository *Repository, store *FileStore, agentChecker ...AgentChecker) *Service {
+	var ac AgentChecker
+	if len(agentChecker) > 0 && agentChecker[0] != nil {
+		ac = agentChecker[0]
+	}
+	return &Service{
+		repository:   repository,
+		store:        store,
+		agentChecker: ac,
+	}
 }
 
 func (s *Service) Create(ctx context.Context, createdBy, name, description string) (Template, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return Template{}, ErrInvalidInput
+		return Template{}, fmt.Errorf("%w: template name cannot be empty", ErrInvalidInput)
 	}
 	id := uuid.NewString()
 	version := 1
@@ -68,7 +84,7 @@ func (s *Service) CreateWithContents(ctx context.Context, params CreateTemplateP
 	if trimmedSoul == "" {
 		_ = s.repository.DeleteTemplate(ctx, template.ID)
 		_ = s.store.DeleteTemplate(template)
-		return Template{}, ErrInvalidInput
+		return Template{}, fmt.Errorf("%w: soul content cannot be empty", ErrInvalidInput)
 	}
 	if err := s.store.WriteSoul(template, params.SoulContent); err != nil {
 		_ = s.repository.DeleteTemplate(ctx, template.ID)
@@ -85,7 +101,7 @@ func (s *Service) CreateWithContents(ctx context.Context, params CreateTemplateP
 		if !validSkillName(skillName) {
 			_ = s.repository.DeleteTemplate(ctx, template.ID)
 			_ = s.store.DeleteTemplate(template)
-			return Template{}, ErrInvalidInput
+			return Template{}, fmt.Errorf("%w: invalid skill name: %q", ErrInvalidInput, skillName)
 		}
 		if _, err := s.repository.FindSkillByName(ctx, template.ID, skillName); err == nil {
 			_ = s.repository.DeleteTemplate(ctx, template.ID)
@@ -100,9 +116,7 @@ func (s *Service) CreateWithContents(ctx context.Context, params CreateTemplateP
 		if err != nil {
 			_ = s.repository.DeleteTemplate(ctx, template.ID)
 			_ = s.store.DeleteTemplate(template)
-			if errors.Is(err, ErrInvalidInput) {
-				return Template{}, ErrInvalidInput
-			}
+			// err 已经包含了 ErrInvalidInput 的包装，直接返回
 			return Template{}, err
 		}
 		if _, err := s.repository.CreateSkill(ctx, Skill{
@@ -149,7 +163,7 @@ func (s *Service) LoadPublishedTemplate(ctx context.Context, templateID string, 
 func (s *Service) UpdateMetadata(ctx context.Context, id, name, description string) (Template, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return Template{}, ErrInvalidInput
+		return Template{}, fmt.Errorf("%w: template name cannot be empty", ErrInvalidInput)
 	}
 	template, err := s.repository.GetTemplate(ctx, id)
 	if err != nil {
@@ -164,6 +178,47 @@ func (s *Service) UpdateMetadata(ctx context.Context, id, name, description stri
 
 func (s *Service) Archive(ctx context.Context, id string) (Template, error) {
 	return s.repository.ArchiveTemplate(ctx, id)
+}
+
+// Delete permanently deletes a template and its associated files.
+// It first checks if the template is in use by any agents.
+func (s *Service) Delete(ctx context.Context, id string) error {
+	template, err := s.repository.GetTemplate(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Check if template is in use by agents
+	if s.agentChecker != nil {
+		hasAgents, err := s.agentChecker.HasAgentsForTemplate(ctx, id)
+		if err != nil {
+			return fmt.Errorf("check template usage: %w", err)
+		}
+		if hasAgents {
+			return ErrTemplateInUse
+		}
+	}
+
+	// Delete template files first
+	slog.DebugContext(ctx, "deleting template files",
+		"template_id", id,
+		"template_name", template.Name)
+	if err := s.store.DeleteTemplate(template); err != nil {
+		// Continue even if file deletion fails - we still want to clean up the database
+		slog.WarnContext(ctx, "failed to delete template files, proceeding with database deletion",
+			"template_id", id,
+			"error", err)
+	} else {
+		slog.DebugContext(ctx, "template files deleted successfully",
+			"template_id", id)
+	}
+
+	// Delete from database (skills are cascaded by foreign key)
+	if err := s.repository.DeleteTemplate(ctx, id); err != nil {
+		return fmt.Errorf("delete template from database: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Service) PutSoul(ctx context.Context, id, content string) (Template, error) {
@@ -213,8 +268,11 @@ func (s *Service) ListSkills(ctx context.Context, templateID string) ([]Skill, e
 
 func (s *Service) AddSkill(ctx context.Context, templateID, skillName, skillMD string) (Skill, error) {
 	skillName = strings.TrimSpace(skillName)
-	if !validSkillName(skillName) || strings.TrimSpace(skillMD) == "" {
-		return Skill{}, ErrInvalidInput
+	if !validSkillName(skillName) {
+		return Skill{}, fmt.Errorf("%w: invalid skill name: %q", ErrInvalidInput, skillName)
+	}
+	if strings.TrimSpace(skillMD) == "" {
+		return Skill{}, fmt.Errorf("%w: skill content cannot be empty", ErrInvalidInput)
 	}
 	template, err := s.editableTemplate(ctx, templateID)
 	if err != nil {
@@ -370,7 +428,7 @@ func (s *Service) Unpublish(ctx context.Context, templateID string) (Template, e
 		return Template{}, err
 	}
 	if template.Status != StatusPublished {
-		return Template{}, ErrInvalidInput
+		return Template{}, fmt.Errorf("%w: template is not published (status: %q)", ErrInvalidInput, template.Status)
 	}
 	next, err := s.ensureDraft(ctx, template)
 	if err != nil {
@@ -459,13 +517,13 @@ func (s *Service) refreshChecksum(ctx context.Context, template Template) (Templ
 func (s *Service) validatePublishable(ctx context.Context, template Template) error {
 	soul, err := s.store.ReadSoul(template)
 	if err != nil {
-		return ErrInvalidTemplate
+		return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
 	}
 	if strings.TrimSpace(soul) == "" {
 		return ErrInvalidTemplate
 	}
 	if _, err := os.Stat(template.UserMDPath); err != nil {
-		return ErrInvalidTemplate
+		return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
 	}
 	skillDirs, err := os.ReadDir(template.SkillsPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -476,7 +534,7 @@ func (s *Service) validatePublishable(ctx context.Context, template Template) er
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(template.SkillsPath, skillDir.Name(), "SKILL.md")); err != nil {
-			return ErrInvalidTemplate
+			return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
 		}
 	}
 	skills, err := s.repository.ListSkills(ctx, template.ID)
@@ -485,7 +543,7 @@ func (s *Service) validatePublishable(ctx context.Context, template Template) er
 	}
 	for _, skill := range skills {
 		if _, err := os.Stat(skill.SkillPath); err != nil {
-			return ErrInvalidTemplate
+			return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
 		}
 	}
 	return nil
@@ -504,7 +562,7 @@ func validSkillName(name string) bool {
 func parseSkillArchive(archive []byte) (map[string][]byte, string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
 	if err != nil {
-		return nil, "", ErrInvalidInput
+		return nil, "", fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 	files := map[string][]byte{}
 	var skillName string
@@ -515,23 +573,23 @@ func parseSkillArchive(archive []byte) (map[string][]byte, string, error) {
 		}
 		cleanName := filepath.ToSlash(filepath.Clean(file.Name))
 		if cleanName == "." || strings.HasPrefix(cleanName, "../") || strings.Contains(cleanName, "/../") {
-			return nil, "", ErrInvalidInput
+			return nil, "", fmt.Errorf("%w: invalid path in archive: %q", ErrInvalidInput, file.Name)
 		}
 		parts := strings.Split(cleanName, "/")
 		if len(parts) < 2 {
-			return nil, "", ErrInvalidInput
+			return nil, "", fmt.Errorf("%w: invalid path structure, expected skill directory: %q", ErrInvalidInput, file.Name)
 		}
 		if skillName == "" {
 			skillName = parts[0]
 			if !validSkillName(skillName) {
-				return nil, "", ErrInvalidInput
+				return nil, "", fmt.Errorf("%w: invalid skill name: %q", ErrInvalidInput, skillName)
 			}
 		} else if parts[0] != skillName {
-			return nil, "", ErrInvalidInput
+			return nil, "", fmt.Errorf("%w: multiple root directories in archive: %q and %q", ErrInvalidInput, skillName, parts[0])
 		}
 		relative := strings.Join(parts[1:], "/")
 		if relative == "" || relative == "." || strings.HasPrefix(relative, "../") || strings.Contains(relative, "/../") {
-			return nil, "", ErrInvalidInput
+			return nil, "", fmt.Errorf("%w: invalid relative path: %q", ErrInvalidInput, relative)
 		}
 		if relative == "SKILL.md" {
 			hasSkillMD = true
@@ -543,7 +601,7 @@ func parseSkillArchive(archive []byte) (map[string][]byte, string, error) {
 		files[relative] = content
 	}
 	if skillName == "" || !hasSkillMD {
-		return nil, "", ErrInvalidInput
+		return nil, "", fmt.Errorf("%w: missing skill name or SKILL.md", ErrInvalidInput)
 	}
 	return files, skillName, nil
 }
