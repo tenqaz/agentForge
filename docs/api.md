@@ -192,6 +192,26 @@ Request:
 }
 ```
 
+### `DELETE /api/agents/{id}`
+
+物理删除 agent：停止并移除其 Docker 容器、删除 hermes-home 目录、删除数据库记录（关联的 runtime_jobs/agent_channels/agent_runtime_events 通过外键 CASCADE 自动清理）。
+
+权限：owner 或 admin。
+
+响应：
+
+| 状态码 | error code | 说明 |
+|------|------|------|
+| 204 No Content | — | 删除成功 |
+| 401 | unauthorized | 未登录 |
+| 403 | forbidden | 不是 owner 也不是 admin |
+| 404 | agent_not_found / not_found | agent 不存在 |
+| 409 | agent_cannot_delete | 当前状态（provisioning/starting）不允许删除，请等状态稳定后重试 |
+| 409 | agent_has_unfinished_jobs | 存在未完成的运行时任务，请稍后重试 |
+| 500 | internal_error | 删除过程内部错误（agent 转 error 状态，可重试同一接口） |
+
+注意：500 错误后 agent 进入 `error` 状态并写入 `last_error_code`：`delete_inspect_failed` / `delete_stop_failed` / `delete_remove_failed` / `delete_home_failed`。再次调用 DELETE 会从中断处接续完成清理（每一步都幂等）。
+
 ## Weixin Channel
 
 ### `GET /api/agents/{id}/channels/weixin`

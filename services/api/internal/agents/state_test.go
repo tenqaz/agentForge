@@ -94,7 +94,7 @@ func TestServiceCreateCreatesAgentAndProvisionJob(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir())
 	ctx := context.Background()
 
 	created, err := service.Create(ctx, CreateParams{
@@ -140,7 +140,7 @@ func TestServiceCreateRejectsNonPublishedTemplates(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir())
 	ctx := context.Background()
 
 	for _, status := range []string{"draft", "archived"} {
@@ -169,7 +169,7 @@ func TestServiceCreateRuntimeJobRejectsUnavailableRuntime(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir())
 	ctx := context.Background()
 	insertAgentFixture(t, database, "agent-1", "user-1", StatusCreating)
 
@@ -299,5 +299,31 @@ func insertAgentFixture(t *testing.T, database *sql.DB, agentID, ownerUserID str
 	`, agentID, ownerUserID, status, "/tmp/"+agentID)
 	if err != nil {
 		t.Fatalf("insert agent fixture: %v", err)
+	}
+}
+
+func TestStatusCanDelete(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		status Status
+		want   bool
+	}{
+		{StatusCreating, true},
+		{StatusRunning, true},
+		{StatusStopped, true},
+		{StatusError, true},
+		{StatusProvisioning, false},
+		{StatusStarting, false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(string(tc.status), func(t *testing.T) {
+			t.Parallel()
+			if got := tc.status.CanDelete(); got != tc.want {
+				t.Fatalf("%s.CanDelete() = %t, want %t", tc.status, got, tc.want)
+			}
+		})
 	}
 }

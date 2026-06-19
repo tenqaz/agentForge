@@ -3,11 +3,13 @@ package agents
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"agentforge.local/services/api/internal/jobs"
+	"agentforge.local/services/api/internal/runtime"
 	"github.com/google/uuid"
 )
 
@@ -15,14 +17,16 @@ type Service struct {
 	database    *sql.DB
 	repository  *Repository
 	runtimeJobs *jobs.RuntimeRepository
+	runner      runtime.Runner
 	dataDir     string
 }
 
-func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, dataDir string) *Service {
+func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, runner runtime.Runner, dataDir string) *Service {
 	return &Service{
 		database:    database,
 		repository:  repository,
 		runtimeJobs: runtimeJobs,
+		runner:      runner,
 		dataDir:     dataDir,
 	}
 }
@@ -138,4 +142,70 @@ func (s *Service) CreateRuntimeJob(ctx context.Context, agentID string, jobType 
 		return jobs.RuntimeJob{}, fmt.Errorf("create runtime job: %w", err)
 	}
 	return job, nil
+}
+
+// Delete cleans up an agent's container, hermes-home directory, and
+// database row in that order. Each external side-effect stage is
+// idempotent, so a partially-completed deletion can be retried safely
+// (the agent will be in StatusError, which CanDelete allows).
+//
+// This method follows the single-handling rule: it never logs; the HTTP
+// handler is the sole logging point.
+func (s *Service) Delete(ctx context.Context, agentID string) error {
+	agent, err := s.repository.Get(ctx, agentID)
+	if err != nil {
+		return fmt.Errorf("get agent for delete: %w", err)
+	}
+	if !agent.Status.CanDelete() {
+		return fmt.Errorf("%w: status=%s", ErrCannotDelete, agent.Status)
+	}
+	hasUnfinished, err := s.runtimeJobs.HasUnfinishedByAgent(ctx, agentID)
+	if err != nil {
+		return fmt.Errorf("check unfinished jobs: %w", err)
+	}
+	if hasUnfinished {
+		return ErrHasUnfinishedJobs
+	}
+
+	containerName := runtime.DefaultContainerName(agentID)
+	status, inspectErr := s.runner.Inspect(ctx, containerName)
+	if inspectErr != nil && !errors.Is(inspectErr, runtime.ErrContainerNotFound) {
+		return s.failWith(ctx, agentID, DeleteFailureInspect,
+			fmt.Errorf("inspect container: %w", inspectErr))
+	}
+	if inspectErr == nil {
+		if status.Running {
+			if err := s.runner.Stop(ctx, containerName); err != nil {
+				return s.failWith(ctx, agentID, DeleteFailureStop,
+					fmt.Errorf("stop container: %w", err))
+			}
+		}
+		if err := s.runner.Remove(ctx, containerName); err != nil {
+			if !errors.Is(err, runtime.ErrContainerNotFound) {
+				return s.failWith(ctx, agentID, DeleteFailureRemove,
+					fmt.Errorf("remove container: %w", err))
+			}
+		}
+	}
+
+	if err := runtime.DestroyHome(agent.HermesHomePath); err != nil {
+		return s.failWith(ctx, agentID, DeleteFailureHome,
+			fmt.Errorf("destroy hermes home: %w", err))
+	}
+
+	if err := s.repository.Delete(ctx, agentID); err != nil {
+		return fmt.Errorf("delete agent from database: %w", err)
+	}
+	return nil
+}
+
+// failWith records the deletion failure on the agent row and returns the
+// original error. If recording itself fails, both errors are joined so
+// neither is lost.
+func (s *Service) failWith(ctx context.Context, agentID, code string, original error) error {
+	msg := original.Error()
+	if markErr := s.repository.MarkDeleteFailed(ctx, agentID, code, msg); markErr != nil {
+		return errors.Join(original, fmt.Errorf("mark agent delete failed: %w", markErr))
+	}
+	return original
 }

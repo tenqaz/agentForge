@@ -202,6 +202,10 @@ func writeAgentError(c *gin.Context, err error) {
 		writeAPIError(c, http.StatusNotFound, "not_found", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, agents.ErrConflict):
 		writeAPIError(c, http.StatusConflict, "conflict", err.Error(), errWithRequest(c, err))
+	case errors.Is(err, agents.ErrCannotDelete):
+		writeAPIError(c, http.StatusConflict, "agent_cannot_delete", err.Error(), errWithRequest(c, err))
+	case errors.Is(err, agents.ErrHasUnfinishedJobs):
+		writeAPIError(c, http.StatusConflict, "agent_has_unfinished_jobs", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, agents.ErrInvalidInput), errors.Is(err, agents.ErrInvalidStateTransition):
 		writeAPIError(c, http.StatusBadRequest, "invalid_request", err.Error(), errWithRequest(c, err))
 	case errors.Is(err, agents.ErrRuntimeUnavailable):

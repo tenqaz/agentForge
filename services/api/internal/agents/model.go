@@ -20,6 +20,8 @@ var (
 	ErrInvalidInput           = errors.New("invalid agent input")
 	ErrInvalidStateTransition = errors.New("invalid agent status transition")
 	ErrRuntimeUnavailable     = errors.New("agent runtime unavailable")
+	ErrCannotDelete           = errors.New("agent cannot be deleted in current state")
+	ErrHasUnfinishedJobs      = errors.New("agent has unfinished runtime jobs")
 )
 
 type Agent struct {
@@ -90,6 +92,19 @@ func (s Status) CanTransitionTo(next Status) bool {
 func (s Status) CanRestartRuntime() bool {
 	switch s {
 	case StatusRunning, StatusStopped, StatusError:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanDelete reports whether an agent in this status is eligible to be
+// deleted. Only stable states are eligible; provisioning/starting are
+// rejected to avoid races with RuntimeWorker. error is included to allow
+// retries after a partially-completed deletion.
+func (s Status) CanDelete() bool {
+	switch s {
+	case StatusCreating, StatusRunning, StatusStopped, StatusError:
 		return true
 	default:
 		return false

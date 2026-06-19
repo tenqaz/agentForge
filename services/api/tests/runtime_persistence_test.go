@@ -39,6 +39,7 @@ func TestRuntimePersistenceRestartKeepsSessionsAndWeixinAccountFiles(t *testing.
 		fixture.database,
 		agents.NewRepository(fixture.database),
 		jobs.NewRuntimeRepository(fixture.database),
+		nil,
 		fixture.dataDir,
 	)
 	createdAgent, err := agentService.Create(ctx, agents.CreateParams{

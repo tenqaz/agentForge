@@ -157,3 +157,79 @@ func mustContainFile(t *testing.T, path, want string) {
 		t.Fatalf("%s = %q, want substring %q", path, string(data), want)
 	}
 }
+
+func TestDestroyHomeRemovesExistingDirectory(t *testing.T) {
+	root := t.TempDir()
+	homePath := filepath.Join(root, "agents", "agent-x", "hermes-home")
+	if err := os.MkdirAll(filepath.Join(homePath, "memories"), 0o755); err != nil {
+		t.Fatalf("mkdir hermes-home: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(homePath, "USER.md"), []byte("payload"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	if err := DestroyHome(homePath); err != nil {
+		t.Fatalf("DestroyHome returned error: %v", err)
+	}
+
+	if _, err := os.Stat(homePath); !os.IsNotExist(err) {
+		t.Fatalf("expected hermes home removed, got err=%v", err)
+	}
+}
+
+func TestDestroyHomeIsIdempotentWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	homePath := filepath.Join(root, "agents", "agent-x", "hermes-home")
+
+	if err := DestroyHome(homePath); err != nil {
+		t.Fatalf("DestroyHome on missing dir returned error: %v", err)
+	}
+}
+
+func TestDestroyHomeRefusesEmptyPath(t *testing.T) {
+	if err := DestroyHome(""); err == nil {
+		t.Fatal("DestroyHome(\"\") returned nil, want error")
+	}
+}
+
+func TestDestroyHomeRefusesNonHermesHome(t *testing.T) {
+	root := t.TempDir()
+	bad := filepath.Join(root, "agents", "agent-x", "skills")
+	if err := os.MkdirAll(bad, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := DestroyHome(bad); err == nil {
+		t.Fatal("DestroyHome on non-hermes-home path returned nil, want error")
+	}
+	if _, err := os.Stat(bad); err != nil {
+		t.Fatalf("non-hermes-home path was deleted: %v", err)
+	}
+}
+
+func TestDestroyHomeRefusesShallowPath(t *testing.T) {
+	if err := DestroyHome("/hermes-home"); err == nil {
+		t.Fatal("DestroyHome(\"/hermes-home\") returned nil, want error")
+	}
+}
+
+func TestDestroyHomeAcceptsRelativePath(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, "agents", "agent-x", "hermes-home")
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	rel, err := filepath.Rel(cwd, abs)
+	if err != nil {
+		t.Fatalf("rel: %v", err)
+	}
+	if err := DestroyHome(rel); err != nil {
+		t.Fatalf("DestroyHome on relative path returned error: %v", err)
+	}
+	if _, err := os.Stat(abs); !os.IsNotExist(err) {
+		t.Fatalf("expected dir removed, err=%v", err)
+	}
+}

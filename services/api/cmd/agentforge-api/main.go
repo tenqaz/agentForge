@@ -75,11 +75,11 @@ func run() error {
 	runtimeJobs := jobs.NewRuntimeRepository(database)
 	agentRepo := agents.NewRepository(database)
 	templateService := templates.NewService(templateRepo, templateStore, agentRepo)
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, cfg.DataDir)
+	runner := runtime.NewDockerRunner(cfg.DockerBin)
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)
-	runner := runtime.NewDockerRunner(cfg.DockerBin)
 	templateLoader := templateService
 	runtimeWorker := jobs.NewRuntimeWorker(jobs.RuntimeWorkerDependencies{
 		Database:       database,
