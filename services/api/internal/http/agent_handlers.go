@@ -1,6 +1,7 @@
 package http
 
 import (
+	"log/slog"
 	"net/http"
 
 	"agentforge.local/services/api/internal/agents"
@@ -26,6 +27,7 @@ func (h *AgentHandlers) Register(router gin.IRoutes) {
 	router.GET("/agents/:id/runtime-jobs", h.ListRuntimeJobs)
 	router.POST("/agents/:id/runtime-jobs", h.CreateRuntimeJob)
 	router.GET("/agents/:id/runtime-jobs/:jobId", h.GetRuntimeJob)
+	router.DELETE("/agents/:id", h.Delete)
 }
 
 func (h *AgentHandlers) Create(c *gin.Context) {
@@ -146,6 +148,27 @@ func (h *AgentHandlers) GetRuntimeJob(c *gin.Context) {
 		return
 	}
 	writeJSON(c, http.StatusOK, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
+}
+
+func (h *AgentHandlers) Delete(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
+	if !ok {
+		return
+	}
+	user, _ := UserFromContext(c)
+
+	if err := h.service.Delete(c.Request.Context(), agent.ID); err != nil {
+		slog.ErrorContext(c.Request.Context(), "agent delete failed",
+			"agent_id", agent.ID,
+			"actor_user_id", user.ID,
+			"error", err)
+		writeAgentError(c, err)
+		return
+	}
+	slog.InfoContext(c.Request.Context(), "agent delete succeeded",
+		"agent_id", agent.ID,
+		"actor_user_id", user.ID)
+	c.Status(http.StatusNoContent)
 }
 
 type agentResponse struct {
