@@ -12,6 +12,17 @@ import (
 
 var ErrContainerNotFound = errors.New("container not found")
 
+// isContainerNotFoundOutput reports whether docker CLI combined output
+// indicates the target container/object does not exist. Matching is
+// case-insensitive because docker phrasing varies by platform/version
+// (e.g. "Error: No such container" on Linux, lowercase "no such object"
+// on some Docker Desktop builds).
+func isContainerNotFoundOutput(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "no such object") ||
+		strings.Contains(lower, "no such container")
+}
+
 type Runner interface {
 	EnsureRunning(ctx context.Context, spec ContainerSpec) error
 	Stop(ctx context.Context, containerName string) error
@@ -106,7 +117,7 @@ func (r *dockerRunner) Remove(ctx context.Context, containerName string) error {
 	output, err := exec.CommandContext(ctx, r.dockerBin, "rm", "-f", containerName).CombinedOutput()
 	if err != nil {
 		trimmed := strings.TrimSpace(string(output))
-		if strings.Contains(trimmed, "No such object") || strings.Contains(trimmed, "No such container") {
+		if isContainerNotFoundOutput(trimmed) {
 			return ErrContainerNotFound
 		}
 		return fmt.Errorf("docker rm failed: %w: %s", err, trimmed)
@@ -118,7 +129,7 @@ func (r *dockerRunner) Inspect(ctx context.Context, containerName string) (Conta
 	output, err := exec.CommandContext(ctx, r.dockerBin, "inspect", "--format", "{{json .State}}", containerName).CombinedOutput()
 	if err != nil {
 		trimmed := strings.TrimSpace(string(output))
-		if strings.Contains(trimmed, "No such object") || strings.Contains(trimmed, "No such container") {
+		if isContainerNotFoundOutput(trimmed) {
 			return ContainerStatus{}, ErrContainerNotFound
 		}
 		return ContainerStatus{}, fmt.Errorf("docker inspect failed: %w: %s", err, trimmed)
