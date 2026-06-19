@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
@@ -16,6 +15,9 @@ import {
   type ApiClient,
   type User,
 } from "@/lib/api";
+import MobileDrawer from "@/components/ui/mobile-drawer";
+import MobileTopBar from "@/components/ui/mobile-top-bar";
+import Sidebar from "@/components/ui/sidebar";
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -48,6 +50,8 @@ export function useSessionState() {
   return session;
 }
 
+const PUBLIC_PATHS = ["/login", "/register"];
+
 export default function AppShell({ children, apiBaseUrl }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -61,6 +65,7 @@ export default function AppShell({ children, apiBaseUrl }: AppShellProps) {
   );
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const refreshSession = useCallback(async () => {
     setLoading(true);
@@ -85,12 +90,24 @@ export default function AppShell({ children, apiBaseUrl }: AppShellProps) {
     })();
   }, [refreshSession]);
 
+  // Close drawer on route change. setState within effect is intentional here:
+  // the drawer's open state is derived from external navigation events.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDrawerOpen(false);
+  }, [pathname]);
+
   async function handleSignOut() {
     await apiClient.delete("/api/session");
     setUser(null);
     router.push("/login");
     router.refresh();
   }
+
+  const isPublicPath = PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+  const showShell = !!user && !isPublicPath;
 
   return (
     <ApiClientContext.Provider value={apiClient}>
@@ -102,96 +119,53 @@ export default function AppShell({ children, apiBaseUrl }: AppShellProps) {
           clearSession: () => setUser(null),
         }}
       >
-        <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(186,107,34,0.18),_transparent_32%),linear-gradient(180deg,_#f6efe3_0%,_#f2ebdf_55%,_#efe6d8_100%)] text-stone-900">
-          <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-10">
-            <header className="rounded-[2rem] border border-stone-900/10 bg-white/70 px-5 py-4 shadow-[0_20px_80px_rgba(35,28,19,0.08)] backdrop-blur">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-center gap-4">
-                  <Link
-                    className="inline-flex items-center gap-3 text-sm font-semibold uppercase tracking-[0.28em] text-stone-700"
-                    href="/"
-                  >
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-stone-900 text-sm text-stone-50">
-                      AF
-                    </span>
-                    AgentForge Console
-                  </Link>
-                  <span className="hidden rounded-full border border-stone-900/10 bg-stone-50 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-stone-500 md:inline-flex">
-                    MVP
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <nav className="flex flex-wrap items-center gap-2 text-sm">
-                    <NavLink href="/templates" active={pathname.startsWith("/templates")}>
-                      Templates
-                    </NavLink>
-                    <NavLink href="/agents" active={pathname.startsWith("/agents")}>
-                      Agents
-                    </NavLink>
-                    {user?.role === "admin" ? (
-                      <NavLink
-                        href="/admin/templates"
-                        active={pathname.startsWith("/admin/templates")}
-                      >
-                        Admin
-                      </NavLink>
-                    ) : null}
-                  </nav>
-                  {loading ? (
-                    <div className="rounded-full border border-stone-900/10 bg-stone-50 px-4 py-2 text-xs uppercase tracking-[0.18em] text-stone-500">
-                      Loading session
-                    </div>
-                  ) : user ? (
-                    <div className="flex items-center gap-3 rounded-full border border-stone-900/10 bg-stone-50 px-3 py-2">
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-stone-900">{user.email}</p>
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">
-                          {user.role}
-                        </p>
-                      </div>
-                      <button
-                        className="rounded-full border border-stone-900/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 transition hover:border-stone-900 hover:bg-stone-900 hover:text-stone-50"
-                        onClick={() => void handleSignOut()}
-                        type="button"
-                      >
-                        Sign out
-                      </button>
-                    </div>
-                  ) : (
-                    <NavLink href="/login" active={pathname.startsWith("/login")}>
-                      Sign in
-                    </NavLink>
-                  )}
-                </div>
+        {showShell ? (
+          <div className="min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
+            {/* Desktop sidebar — visual only at the chrome layer; pointer-events restored on the inner Sidebar so its interactive children remain clickable while the main content remains hit-test reachable. */}
+            <aside className="pointer-events-none fixed inset-y-0 left-0 z-30 hidden w-[var(--sidebar-width)] border-r border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg-elevated)] lg:block">
+              <div className="pointer-events-auto h-full">
+                <Sidebar
+                  user={user}
+                  loading={loading}
+                  onSignOut={handleSignOut}
+                  pathname={pathname}
+                />
               </div>
+            </aside>
+
+            {/* Mobile top bar */}
+            <header className="fixed inset-x-0 top-0 z-40 h-[var(--topbar-height)] border-b border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg-elevated)] px-4 lg:hidden">
+              <MobileTopBar
+                onOpenDrawer={() => setDrawerOpen(true)}
+                user={user}
+              />
             </header>
-            <main className="flex-1 py-6">{children}</main>
+
+            {/* Mobile drawer */}
+            <MobileDrawer
+              open={drawerOpen}
+              onClose={() => setDrawerOpen(false)}
+              user={user}
+              loading={loading}
+              onSignOut={handleSignOut}
+              pathname={pathname}
+            />
+
+            {/* Content (isolate creates a new stacking context so the fixed sidebar never sits on top of interactive content) */}
+            <main className="relative isolate pt-[var(--topbar-height)] lg:pt-0 lg:pl-[var(--sidebar-width)]">
+              <div className="mx-auto w-full max-w-[var(--content-max)] px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
+                {children}
+              </div>
+            </main>
           </div>
-        </div>
+        ) : (
+          <div className="min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
+            <div className="mx-auto w-full max-w-[var(--content-max)] px-4 py-10 sm:px-6">
+              {children}
+            </div>
+          </div>
+        )}
       </SessionContext.Provider>
     </ApiClientContext.Provider>
-  );
-}
-
-function NavLink({
-  active,
-  href,
-  children,
-}: {
-  active: boolean;
-  href: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      className={`rounded-full border px-4 py-2 font-medium transition ${
-        active
-          ? "border-stone-900/15 bg-white/85 text-stone-950"
-          : "border-transparent text-stone-700 hover:border-stone-900/10 hover:bg-white/70 hover:text-stone-950"
-      }`}
-      href={href}
-    >
-      {children}
-    </Link>
   );
 }

@@ -54,18 +54,18 @@ test("visitor can register and is redirected to login without being signed in", 
   });
 
   await page.goto("/register");
-  await page.getByLabel("Email").fill("  USER@example.com ");
-  await page.getByLabel("Password").fill("abc12345");
-  await page.getByRole("button", { name: "Create Account" }).click();
+  await page.getByLabel("邮箱").fill("  USER@example.com ");
+  await page.getByLabel("密码").fill("abc12345");
+  await page.getByRole("button", { name: "创建账户" }).click();
 
   await expect(page).toHaveURL(/\/login\?registered=1$/);
   await expect(
-    page.getByText("Account created. Sign in with your new email and password."),
+    page.getByText("账户已创建，请使用新邮箱和密码登录"),
   ).toBeVisible();
   expect(registrationRequestCount).toBe(1);
   expect(loginAttemptCount).toBe(0);
-  await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
-  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.getByRole("button", { name: "登录" })).toBeVisible();
+  await expect(page.getByLabel("邮箱")).toBeVisible();
   await expect(page).not.toHaveURL(/\/templates$/);
   await expect(page).not.toHaveURL(/\/admin\/templates$/);
 });

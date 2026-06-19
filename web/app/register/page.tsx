@@ -12,6 +12,9 @@ import {
 import { registerWithPassword } from "@/app/register/actions";
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import { apiErrorMessage } from "@/lib/api";
+import Button from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import Input from "@/components/ui/input";
 
 export default function RegisterPage() {
   const apiClient = useApiClient();
@@ -62,61 +65,71 @@ export default function RegisterPage() {
   }
 
   return (
-    <section className="mx-auto max-w-2xl">
-      <div className="panel rounded-[2rem] p-8 sm:p-10">
-        <p className="eyebrow">Account</p>
-        <h1 className="mt-5 text-4xl font-semibold tracking-tight text-stone-950">
-          Create your console account.
+    <section className="mx-auto max-w-md py-8 sm:py-12">
+      <Card className="p-7 sm:p-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-[color:var(--color-fg)]">
+          创建控制台账户
         </h1>
-        <p className="mt-3 max-w-xl text-base leading-7 text-stone-600">
-          Register with an email and password, then sign in to manage your
-          agents and templates.
+        <p className="mt-2 text-sm leading-6 text-[color:var(--color-fg-muted)]">
+          使用邮箱和密码注册，然后登录管理你的 Agent 与 Template。
         </p>
-        <form className="mt-8 grid gap-5" onSubmit={(event) => void handleSubmit(event)}>
-          <label className="grid gap-2 text-sm font-medium text-stone-700">
-            Email
-            <input
-              className="rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
+
+        <form className="mt-6 grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
+          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
+            邮箱
+            <Input
               name="email"
-              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              autoComplete="email"
               placeholder="user@example.com"
               required
-              type="email"
               value={email}
+              onChange={(event) => setEmail(event.target.value)}
             />
           </label>
-          <label className="grid gap-2 text-sm font-medium text-stone-700">
-            Password
-            <input
-              className="rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
+          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
+            密码
+            <Input
               name="password"
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="At least 8 characters with letters and numbers"
-              required
               type="password"
+              autoComplete="new-password"
+              placeholder="至少 8 位，包含字母与数字"
+              required
               value={password}
+              onChange={(event) => setPassword(event.target.value)}
             />
           </label>
+
           {error ? (
-            <div className="rounded-[1.25rem] border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div
+              role="alert"
+              className="rounded-[var(--radius-md)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-3.5 py-2.5 text-sm text-[color:var(--color-danger)]"
+            >
               {error}
             </div>
           ) : null}
-          <button
-            className="mt-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!hydrated || pending}
+
+          <Button
             type="submit"
+            variant="primary"
+            fullWidth
+            disabled={!hydrated || pending}
+            loading={pending}
           >
-            {pending ? "Creating Account..." : "Create Account"}
-          </button>
+            {pending ? "创建中..." : "创建账户"}
+          </Button>
         </form>
-        <p className="mt-6 text-sm text-stone-600">
-          Already have an account?{" "}
-          <Link className="font-semibold text-stone-950 underline decoration-stone-300 underline-offset-4" href="/login">
-            Back to sign in
+
+        <p className="mt-6 text-sm text-[color:var(--color-fg-muted)]">
+          已有账户？{" "}
+          <Link
+            href="/login"
+            className="font-medium text-[color:var(--color-fg)] underline decoration-[color:var(--color-border-strong)] decoration-1 underline-offset-4 hover:text-[color:var(--color-accent)] hover:decoration-[color:var(--color-accent)]"
+          >
+            返回登录
           </Link>
         </p>
-      </div>
+      </Card>
     </section>
   );
 }

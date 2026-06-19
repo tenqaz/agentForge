@@ -228,45 +228,45 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
   });
 
   await page.goto("/login");
-  await page.getByLabel("Email").fill("admin@example.com");
-  await page.getByLabel("Password").fill("secret");
-  await page.getByRole("button", { name: "Sign In" }).click();
+  await page.getByLabel("邮箱").fill("admin@example.com");
+  await page.getByLabel("密码").fill("secret");
+  await page.getByRole("button", { name: "登录" }).click();
 
   await expect(page).toHaveURL(/\/admin\/templates$/);
-  await page.getByRole("link", { name: "New Draft" }).click();
-  await page.getByLabel("Name").fill("Support Coach");
-  await page.getByLabel("Description").fill("Helps ops teams triage requests.");
+  await page.getByRole("link", { name: "新建草稿" }).click();
+  await page.getByLabel("名称").fill("Support Coach");
+  await page.getByLabel("描述").fill("Helps ops teams triage requests.");
   await page.getByLabel("SOUL.md").fill("# Soul\nYou are calm and direct.");
   await page.getByLabel("USER.md").fill("# User\nPrefer concise answers.");
-  await page.getByLabel("Skill ZIPs").setInputFiles({
+  await page.getByLabel("Skill ZIP").setInputFiles({
     name: "triage.zip",
     mimeType: "application/zip",
     buffer: Buffer.from("fake-zip"),
   });
-  await page.getByRole("button", { name: "Create Draft" }).click();
+  await page.getByRole("button", { name: "创建草稿" }).click();
 
   await expect(page).toHaveURL(/\/admin\/templates\/template-1$/);
   await expect(page.getByText("triage", { exact: true })).toBeVisible();
   await page.getByRole("textbox").nth(2).fill("# Soul\nYou are calm and direct.");
-  await page.getByRole("button", { name: "Save SOUL" }).click();
+  await page.getByRole("button", { name: "保存 SOUL" }).click();
   await page.getByRole("textbox").nth(3).fill("# User\nPrefer concise answers.");
-  await page.getByRole("button", { name: "Save USER" }).click();
+  await page.getByRole("button", { name: "保存 USER" }).click();
 
   const skillZip = join(mkdtempSync(join(tmpdir(), "agentforge-skill-")), "handoff.zip");
   writeFileSync(skillZip, "placeholder");
   await page.getByLabel("Skill ZIP").setInputFiles(skillZip);
-  await page.getByRole("button", { name: "Upload Skill" }).click();
+  await page.getByRole("button", { name: "上传 Skill" }).click();
   await expect(page.getByText("handoff")).toBeVisible();
   await expect(page.getByRole("button", { name: /Edit skill/i })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Delete" }).last().click();
+  await page.getByRole("button", { name: "删除", exact: true }).last().click();
   await expect(page.getByText("handoff")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Publish" }).click();
-  await expect(page.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await page.getByRole("button", { name: "发布" }).click();
+  await expect(page.getByRole("button", { name: "取消发布" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Delete Template" }).click();
-  await page.getByRole("button", { name: "Confirm Delete" }).click();
+  await page.getByRole("button", { name: "删除 Template" }).click();
+  await page.getByRole("button", { name: "确认删除" }).click();
   await expect(page).toHaveURL(/\/admin\/templates$/);
   await expect(page.getByRole("link", { name: "Support Coach" })).toHaveCount(0);
 });
@@ -401,23 +401,23 @@ test("publish is disabled while skill upload is in progress", async ({ page }) =
   });
 
   await page.goto("/login");
-  await page.getByLabel("Email").fill("admin@example.com");
-  await page.getByLabel("Password").fill("secret");
-  await page.getByRole("button", { name: "Sign In" }).click();
+  await page.getByLabel("邮箱").fill("admin@example.com");
+  await page.getByLabel("密码").fill("secret");
+  await page.getByRole("button", { name: "登录" }).click();
 
   await page.goto("/admin/templates/template-1");
-  await expect(page.getByRole("button", { name: "Publish" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发布" })).toBeEnabled();
 
   const skillZip = join(mkdtempSync(join(tmpdir(), "agentforge-skill-")), "handoff.zip");
   writeFileSync(skillZip, "placeholder");
   await page.getByLabel("Skill ZIP").setInputFiles(skillZip);
-  await page.getByRole("button", { name: "Upload Skill" }).click();
+  await page.getByRole("button", { name: "上传 Skill" }).click();
 
-  await expect(page.getByRole("button", { name: "Publishing..." })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Publish" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "发布中..." })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "发布" })).toBeDisabled();
 
   releaseUpload?.();
 
   await expect(page.getByText("handoff")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Publish" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "发布" })).toBeEnabled();
 });

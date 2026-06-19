@@ -224,21 +224,21 @@ test("user can create an agent and complete mocked Weixin pairing", async ({
   });
 
   await page.goto("/login");
-  await page.getByLabel("Email").fill("user@example.com");
-  await page.getByLabel("Password").fill("secret");
-  await page.getByRole("button", { name: "Sign In" }).click();
+  await page.getByLabel("邮箱").fill("user@example.com");
+  await page.getByLabel("密码").fill("secret");
+  await page.getByRole("button", { name: "登录" }).click();
 
   await expect(page).toHaveURL(/\/templates$/);
   await expect(page.getByText("Support Concierge")).toBeVisible();
   await page.getByRole("link", { name: /Support Concierge/i }).click();
 
-  await page.getByRole("button", { name: "Create Agent" }).click();
+  await page.getByRole("button", { name: "创建 Agent" }).click();
   await expect(page).toHaveURL(/\/agents\/agent-1$/);
-  await expect(page.getByText("running")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create Pairing" })).toBeEnabled();
+  await expect(page.getByText("运行中")).toBeVisible();
+  await expect(page.getByRole("button", { name: "生成配对" })).toBeEnabled();
 
-  await page.getByRole("button", { name: "Create Pairing" }).click();
-  await expect(page.getByAltText("Weixin QR code")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "connected" })).toBeVisible();
-  await expect(page.getByText("Connected account: wx-bot-1")).toBeVisible();
+  await page.getByRole("button", { name: "生成配对" }).click();
+  await expect(page.getByAltText("微信配对二维码")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "已连接" })).toBeVisible();
+  await expect(page.getByText("关联账号 wx-bot-1")).toBeVisible();
 });

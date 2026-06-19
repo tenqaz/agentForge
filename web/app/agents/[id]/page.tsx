@@ -3,11 +3,14 @@
 import { use } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 
 import ApiErrorState from "@/components/api-error-state";
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import AgentRuntimeStatus from "@/components/agent-runtime-status";
 import WeixinChannelPanel from "@/components/weixin-channel-panel";
+import Button from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
 import {
   apiErrorMessage,
   deleteAgent,
@@ -29,7 +32,7 @@ export default function AgentDetailPage({
   const { id } = use(params);
   const apiClient = useApiClient();
   const router = useRouter();
-  const { loading, user } = useSessionState();
+  const { loading: sessionLoading, user } = useSessionState();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [runtime, setRuntime] = useState<AgentRuntime | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
@@ -40,7 +43,7 @@ export default function AgentDetailPage({
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (loading) {
+    if (sessionLoading) {
       return;
     }
     if (!user) {
@@ -88,7 +91,7 @@ export default function AgentDetailPage({
     return () => {
       active = false;
     };
-  }, [apiClient, id, loading, router, user]);
+  }, [apiClient, id, sessionLoading, router, user]);
 
   async function handleDelete() {
     setDeleting(true);
@@ -106,55 +109,61 @@ export default function AgentDetailPage({
   }
 
   return (
-    <section className="grid gap-6">
-      <div className="panel rounded-[2rem] p-8">
+    <section className="flex flex-col gap-6">
+      <Card>
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow">Agent Detail</p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950">
-              {agent?.name ?? "Loading agent..."}
-            </h1>
-            <p className="mt-3 text-base leading-7 text-stone-600">
-              Agent ID: {id}
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
+              Agent 详情
+            </p>
+            <CardTitle as="h1" className="mt-2 text-3xl">
+              {agent?.name ?? "加载中..."}
+            </CardTitle>
+            <p className="mt-2 break-all font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
+              ID {id}
             </p>
           </div>
+
           {agent ? (
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               {confirmingDelete ? (
                 <>
-                  <button
-                    className="rounded-full border border-red-300 bg-red-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  <Button
+                    variant="danger"
+                    size="sm"
                     disabled={deleting}
+                    loading={deleting}
                     onClick={() => void handleDelete()}
-                    type="button"
                   >
-                    {deleting ? "Deleting..." : "Confirm Delete"}
-                  </button>
-                  <button
-                    className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    {deleting ? "删除中..." : "确认删除"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     disabled={deleting}
                     onClick={() => setConfirmingDelete(false)}
-                    type="button"
                   >
-                    Cancel
-                  </button>
+                    取消
+                  </Button>
                 </>
               ) : (
-                <button
-                  className="rounded-full border border-red-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 hover:bg-red-50"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={<Trash2 size={14} strokeWidth={1.75} />}
                   onClick={() => setConfirmingDelete(true)}
-                  type="button"
+                  className="text-[color:var(--color-danger)] hover:bg-[color:var(--color-danger-soft)] hover:text-[color:var(--color-danger)]"
                 >
-                  Delete Agent
-                </button>
+                  删除 Agent
+                </Button>
               )}
             </div>
           ) : null}
         </div>
-      </div>
-      {error ? (
-        <ApiErrorState message={error} status={errorStatus} />
-      ) : null}
+      </Card>
+
+      {error ? <ApiErrorState message={error} status={errorStatus} /> : null}
+
       {runtime && channel ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <AgentRuntimeStatus

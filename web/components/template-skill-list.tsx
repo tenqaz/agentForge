@@ -2,8 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Trash2, Upload } from "lucide-react";
 
 import { useApiClient } from "@/components/app-shell";
+import Button from "@/components/ui/button";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import {
   addTemplateSkill,
   apiErrorMessage,
@@ -88,69 +91,79 @@ export default function TemplateSkillList({
   }
 
   return (
-    <div className="panel rounded-[1.75rem] p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="eyebrow">Skills</p>
-          <h2 className="mt-3 text-2xl font-semibold text-stone-950">Upload or delete skills</h2>
-          <p className="mt-2 text-sm leading-7 text-stone-600">
-            Upload a skill ZIP with one top-level directory and a `SKILL.md` inside it.
-          </p>
-        </div>
-      </div>
-      <div className="mt-6 grid gap-4">
+    <Card>
+      <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
+        Skills
+      </p>
+      <CardTitle as="h2" className="mt-1.5">
+        上传或删除技能
+      </CardTitle>
+      <CardDescription>
+        ZIP 必须包含一个以技能名命名的顶层目录，且目录内有 SKILL.md。
+      </CardDescription>
+
+      <div className="mt-5 grid gap-2">
         {skills.map((skill) => (
           <div
-            className="rounded-[1.25rem] border border-stone-900/10 bg-white/85 px-4 py-4"
             key={skill.id}
+            className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg)]/40 px-3.5 py-3"
           >
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-lg font-semibold text-stone-950">{skill.skillName}</p>
-                <p className="mt-1 font-mono text-xs text-stone-500">{skill.checksum}</p>
-              </div>
-              <button
-                className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 hover:border-stone-900 hover:bg-stone-900 hover:text-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={pendingSkillId === skill.id || busySection === "publication"}
-                onClick={() => void handleDeleteSkill(skill.id)}
-                type="button"
-              >
-                {pendingSkillId === skill.id ? "Deleting..." : "Delete"}
-              </button>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-[color:var(--color-fg)]">
+                {skill.skillName}
+              </p>
+              <p className="mt-0.5 truncate font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
+                {skill.checksum}
+              </p>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<Trash2 size={14} strokeWidth={1.75} />}
+              disabled={pendingSkillId === skill.id || busySection === "publication"}
+              loading={pendingSkillId === skill.id}
+              onClick={() => void handleDeleteSkill(skill.id)}
+              className="text-[color:var(--color-danger)] hover:bg-[color:var(--color-danger-soft)] hover:text-[color:var(--color-danger)]"
+            >
+              {pendingSkillId === skill.id ? "删除中..." : "删除"}
+            </Button>
           </div>
         ))}
       </div>
-      <div className="mt-6 grid gap-4 rounded-[1.5rem] border border-dashed border-stone-900/15 bg-stone-50/70 p-5">
-        <label className="grid gap-2 text-sm font-medium text-stone-700">
+
+      <div className="mt-6 grid gap-3 rounded-[var(--radius-lg)] border border-dashed border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg)]/40 p-4">
+        <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
           Skill ZIP
           <input
-            accept=".zip,application/zip"
-            className="rounded-[1.1rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
-            onChange={(event) => setSkillFile(event.target.files?.[0] ?? null)}
             type="file"
+            accept=".zip,application/zip"
+            onChange={(event) => setSkillFile(event.target.files?.[0] ?? null)}
+            className="block w-full rounded-[var(--radius-md)] border border-[color:var(--color-border-default)] bg-[color:var(--color-bg-input)] px-3 py-2 text-sm text-[color:var(--color-fg)] hover:border-[color:var(--color-border-strong)] file:mr-3 file:rounded-[var(--radius-md)] file:border-0 file:bg-[color:var(--color-bg-hover)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--color-fg)] hover:file:bg-[color:var(--color-bg-active)]"
           />
         </label>
-        <p className="text-sm leading-6 text-stone-600">
-          The ZIP must contain one top-level folder named after the skill, and that folder must
-          include `SKILL.md`.
-        </p>
-        <button
-          className="w-fit rounded-full bg-stone-950 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+        <Button
+          variant="primary"
+          size="sm"
+          leftIcon={<Upload size={14} strokeWidth={1.75} />}
           disabled={
             pendingSkillId === "create" || !skillFile || busySection === "publication"
           }
+          loading={pendingSkillId === "create"}
           onClick={() => void handleAddSkill()}
-          type="button"
+          className="w-fit"
         >
-          {pendingSkillId === "create" ? "Uploading..." : "Upload Skill"}
-        </button>
+          {pendingSkillId === "create" ? "上传中..." : "上传 Skill"}
+        </Button>
       </div>
+
       {error ? (
-        <div className="mt-4 rounded-[1.25rem] border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div
+          role="alert"
+          className="mt-4 rounded-[var(--radius-md)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-3.5 py-2.5 text-sm text-[color:var(--color-danger)]"
+        >
           {error}
         </div>
       ) : null}
-    </div>
+    </Card>
   );
 }

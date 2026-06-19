@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useApiClient, useSessionState } from "@/components/app-shell";
+import { Card, CardTitle } from "@/components/ui/card";
+import StatusChip from "@/components/ui/status-chip";
 import TemplateEditor from "@/components/template-editor";
 import TemplateSkillList from "@/components/template-skill-list";
 import {
@@ -25,7 +27,7 @@ export default function AdminTemplateDetailPage({
   const { id } = use(params);
   const apiClient = useApiClient();
   const router = useRouter();
-  const { loading, user } = useSessionState();
+  const { loading: sessionLoading, user } = useSessionState();
   const [template, setTemplate] = useState<Template | null>(null);
   const [soul, setSoul] = useState("");
   const [userContent, setUserContent] = useState("");
@@ -34,7 +36,7 @@ export default function AdminTemplateDetailPage({
   const [busySection, setBusySection] = useState("");
 
   useEffect(() => {
-    if (loading) {
+    if (sessionLoading) {
       return;
     }
     if (!user) {
@@ -85,21 +87,36 @@ export default function AdminTemplateDetailPage({
     return () => {
       active = false;
     };
-  }, [apiClient, id, loading, router, user]);
+  }, [apiClient, id, sessionLoading, router, user]);
 
   return (
-    <section className="grid gap-6">
-      <div className="panel rounded-[2rem] p-8">
-        <p className="eyebrow">Template Detail</p>
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950">
-          {template?.name ?? "Loading template..."}
-        </h1>
-      </div>
+    <section className="flex flex-col gap-6">
+      <Card>
+        <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
+          Template 详情
+        </p>
+        <CardTitle as="h1" className="mt-2 text-3xl">
+          {template?.name ?? "加载中..."}
+        </CardTitle>
+        {template ? (
+          <div className="mt-3 flex items-center gap-2">
+            <StatusChip kind="template" value={template.status} />
+            <span className="font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
+              v{template.version}
+            </span>
+          </div>
+        ) : null}
+      </Card>
+
       {error ? (
-        <div className="rounded-[1.5rem] border border-red-300 bg-red-50 px-5 py-4 text-sm text-red-700">
+        <div
+          role="alert"
+          className="rounded-[var(--radius-xl)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-4 py-3 text-sm text-[color:var(--color-danger)]"
+        >
           {error}
         </div>
       ) : null}
+
       {template ? (
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <TemplateEditor

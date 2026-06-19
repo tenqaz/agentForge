@@ -1,25 +1,27 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/app-shell";
 
-const displaySans = Space_Grotesk({
-  variable: "--font-display-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const mono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+const mono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
   title: {
-    default: "AgentForge Console",
-    template: "%s | AgentForge",
+    default: "AgentForge 控制台",
+    template: "%s · AgentForge",
   },
-  description: "Operate templates, agents, and Weixin pairing from one console.",
+  description: "在一个面板里管理 Template、Agent 与微信渠道。",
 };
 
 export default function RootLayout({
@@ -29,8 +31,8 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${displaySans.variable} ${mono.variable} h-full antialiased`}
+      lang="zh-CN"
+      className={`${inter.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <AppShell>{children}</AppShell>

@@ -2,15 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 
 import ApiErrorState from "@/components/api-error-state";
 import { useApiClient, useSessionState } from "@/components/app-shell";
+import Button from "@/components/ui/button";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import Input from "@/components/ui/input";
+import Textarea from "@/components/ui/textarea";
 import { apiErrorMessage, createAdminTemplate } from "@/lib/api";
 
 export default function NewAdminTemplatePage() {
   const apiClient = useApiClient();
   const router = useRouter();
-  const { loading, user } = useSessionState();
+  const { loading: sessionLoading, user } = useSessionState();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [soulContent, setSoulContent] = useState("");
@@ -21,7 +26,7 @@ export default function NewAdminTemplatePage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (loading) {
+    if (sessionLoading) {
       return;
     }
     if (!user) {
@@ -31,7 +36,7 @@ export default function NewAdminTemplatePage() {
     if (user.role !== "admin") {
       router.replace("/templates");
     }
-  }, [loading, router, user]);
+  }, [sessionLoading, router, user]);
 
   async function handleCreate() {
     setPending(true);
@@ -55,73 +60,91 @@ export default function NewAdminTemplatePage() {
   }
 
   return (
-    <section className="mx-auto max-w-3xl">
-      <div className="panel rounded-[2rem] p-8">
-        <p className="eyebrow">New Draft</p>
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950">
-          Create a fresh template draft.
-        </h1>
+    <section className="mx-auto flex max-w-3xl flex-col gap-6">
+      <Card>
+        <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
+          新建草稿
+        </p>
+        <CardTitle as="h1" className="mt-2 text-3xl">
+          创建一个新的 Template 草稿
+        </CardTitle>
+        <CardDescription>
+          填写元数据与初始 SOUL/USER 文件，可选择上传初始 Skill ZIP。
+        </CardDescription>
+
         <div className="mt-6 grid gap-4">
-          <label className="grid gap-2 text-sm font-medium text-stone-700">
-            Name
-            <input
-              className="rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
-              onChange={(event) => setName(event.target.value)}
+          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
+            名称
+            <Input
               value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="例如：客户支持"
             />
           </label>
-          <label className="grid gap-2 text-sm font-medium text-stone-700">
-            Description
-            <textarea
-              className="min-h-28 rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
-              onChange={(event) => setDescription(event.target.value)}
+          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
+            描述
+            <Textarea
+              rows={3}
               value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="一句话说明这个 Template 的用途"
             />
           </label>
-          <label className="grid gap-2 text-sm font-medium text-stone-700">
+          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
             SOUL.md
-            <textarea
-              className="min-h-48 rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 font-mono text-sm text-stone-950 shadow-sm"
-              onChange={(event) => setSoulContent(event.target.value)}
+            <Textarea
+              rows={10}
+              mono
               value={soulContent}
+              onChange={(event) => setSoulContent(event.target.value)}
+              placeholder="# Persona ..."
             />
           </label>
-          <label className="grid gap-2 text-sm font-medium text-stone-700">
+          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
             USER.md
-            <textarea
-              className="min-h-40 rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 font-mono text-sm text-stone-950 shadow-sm"
-              onChange={(event) => setUserContent(event.target.value)}
+            <Textarea
+              rows={8}
+              mono
               value={userContent}
+              onChange={(event) => setUserContent(event.target.value)}
+              placeholder="# User ..."
             />
           </label>
-          <label className="grid gap-2 text-sm font-medium text-stone-700">
-            Skill ZIPs
+          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
+            Skill ZIP
             <input
+              type="file"
               accept=".zip,application/zip"
-              className="rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-sm text-stone-950 shadow-sm file:mr-4 file:rounded-full file:border-0 file:bg-stone-950 file:px-4 file:py-2 file:text-xs file:font-semibold file:uppercase file:tracking-[0.16em] file:text-stone-50"
               multiple
               onChange={(event) => setSkillZips(Array.from(event.target.files ?? []))}
-              type="file"
+              className="block w-full rounded-[var(--radius-md)] border border-[color:var(--color-border-default)] bg-[color:var(--color-bg-input)] px-3 py-2 text-sm text-[color:var(--color-fg)] hover:border-[color:var(--color-border-strong)] file:mr-3 file:rounded-[var(--radius-md)] file:border-0 file:bg-[color:var(--color-bg-hover)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--color-fg)] hover:file:bg-[color:var(--color-bg-active)]"
             />
           </label>
           {skillZips.length > 0 ? (
-            <div className="rounded-[1.25rem] border border-stone-900/10 bg-stone-50/70 px-4 py-3 text-sm text-stone-700">
-              {skillZips.map((file) => file.name).join(", ")}
+            <div className="rounded-[var(--radius-md)] border border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg)]/40 px-3 py-2.5 font-mono text-[11px] text-[color:var(--color-fg-muted)]">
+              <p className="mb-1 text-[color:var(--color-fg-subtle)]">已选择 {skillZips.length} 个文件</p>
+              {skillZips.map((file) => (
+                <p key={file.name} className="truncate">
+                  {file.name}
+                </p>
+              ))}
             </div>
           ) : null}
-          {error ? (
-            <ApiErrorState message={error} status={errorStatus} />
-          ) : null}
-          <button
-            className="w-fit rounded-full bg-stone-950 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+
+          {error ? <ApiErrorState message={error} status={errorStatus} /> : null}
+
+          <Button
+            variant="primary"
+            leftIcon={<Plus size={16} strokeWidth={1.75} />}
             disabled={pending || !name.trim() || !soulContent.trim()}
+            loading={pending}
             onClick={() => void handleCreate()}
-            type="button"
+            className="w-fit"
           >
-            {pending ? "Creating..." : "Create Draft"}
-          </button>
+            {pending ? "创建中..." : "创建草稿"}
+          </Button>
         </div>
-      </div>
+      </Card>
     </section>
   );
 }

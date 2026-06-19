@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 
 import ApiErrorState from "@/components/api-error-state";
 import { useApiClient, useSessionState } from "@/components/app-shell";
+import Button from "@/components/ui/button";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import Input from "@/components/ui/input";
+import StatusChip from "@/components/ui/status-chip";
 import {
   apiErrorMessage,
   createAgent,
@@ -21,7 +25,7 @@ export default function TemplateDetailPage({
   const { id } = use(params);
   const apiClient = useApiClient();
   const router = useRouter();
-  const { loading, user } = useSessionState();
+  const { loading: sessionLoading, user } = useSessionState();
   const [template, setTemplate] = useState<Template | null>(null);
   const [agentName, setAgentName] = useState("");
   const [pending, setPending] = useState(false);
@@ -29,7 +33,7 @@ export default function TemplateDetailPage({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (loading) {
+    if (sessionLoading) {
       return;
     }
     if (!user) {
@@ -55,7 +59,7 @@ export default function TemplateDetailPage({
     return () => {
       active = false;
     };
-  }, [apiClient, id, loading, router, user]);
+  }, [apiClient, id, sessionLoading, router, user]);
 
   async function handleCreateAgent() {
     if (!template) {
@@ -75,39 +79,60 @@ export default function TemplateDetailPage({
 
   return (
     <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-      <div className="panel rounded-[2rem] p-8">
-        <p className="eyebrow">Template Detail</p>
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950">
-          {template?.name ?? "Loading template..."}
-        </h1>
-        <p className="mt-4 text-base leading-8 text-stone-600">
-          {template?.description || "No description provided for this template."}
+      <Card>
+        <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
+          Template 详情
         </p>
-      </div>
-      <div className="panel rounded-[2rem] p-8">
-        <p className="eyebrow">Create Agent</p>
-        <label className="mt-5 grid gap-2 text-sm font-medium text-stone-700">
-          Agent name
-          <input
-            className="rounded-[1.25rem] border border-stone-900/12 bg-white px-4 py-3 text-base text-stone-950 shadow-sm"
-            onChange={(event) => setAgentName(event.target.value)}
+        <CardTitle as="h1" className="mt-2 text-3xl">
+          {template?.name ?? "加载中..."}
+        </CardTitle>
+        <p className="mt-3 text-sm leading-7 text-[color:var(--color-fg-muted)]">
+          {template?.description || "未提供描述。"}
+        </p>
+        {template ? (
+          <div className="mt-5 flex items-center gap-2">
+            <StatusChip kind="template" value={template.status} />
+            <span className="font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
+              v{template.version}
+            </span>
+          </div>
+        ) : null}
+      </Card>
+
+      <Card>
+        <CardTitle as="h2" className="text-xl">
+          创建 Agent
+        </CardTitle>
+        <CardDescription>
+          基于该 Template 创建一个新的 Agent，后端会自动排队配置运行时。
+        </CardDescription>
+
+        <label className="mt-5 grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
+          Agent 名称
+          <Input
             value={agentName}
+            onChange={(event) => setAgentName(event.target.value)}
+            placeholder="给 Agent 起个名字"
           />
         </label>
+
         {error ? (
           <div className="mt-4">
             <ApiErrorState message={error} status={errorStatus} />
           </div>
         ) : null}
-        <button
-          className="mt-6 rounded-full bg-stone-950 px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+
+        <Button
+          variant="primary"
+          fullWidth
+          className="mt-5"
           disabled={pending || !template || !agentName.trim()}
+          loading={pending}
           onClick={() => void handleCreateAgent()}
-          type="button"
         >
-          {pending ? "Creating Agent..." : "Create Agent"}
-        </button>
-      </div>
+          {pending ? "创建中..." : "创建 Agent"}
+        </Button>
+      </Card>
     </section>
   );
 }
