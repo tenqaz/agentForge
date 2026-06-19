@@ -34,6 +34,11 @@ type Config struct {
 	HermesCPUs    string
 	DockerBin     string
 	WeixinBaseURL string
+	ModelDefault  string
+	ModelProvider string
+	ModelBaseURL  string
+	ModelAPIKey   string
+	ModelAPIMode  string
 }
 
 func Load() (Config, error) {
@@ -63,6 +68,11 @@ func Load() (Config, error) {
 		HermesCPUs:    value("AGENTFORGE_HERMES_CPUS", dotEnv, defaultHermesCPUs),
 		DockerBin:     defaultDockerBin,
 		WeixinBaseURL: weixinBaseURL,
+		ModelDefault:  value("AGENTFORGE_MODEL_DEFAULT", dotEnv, ""),
+		ModelProvider: value("AGENTFORGE_MODEL_PROVIDER", dotEnv, ""),
+		ModelBaseURL:  value("AGENTFORGE_MODEL_BASE_URL", dotEnv, ""),
+		ModelAPIKey:   value("AGENTFORGE_MODEL_API_KEY", dotEnv, ""),
+		ModelAPIMode:  value("AGENTFORGE_MODEL_API_MODE", dotEnv, ""),
 	}, nil
 }
 

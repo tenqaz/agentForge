@@ -85,9 +85,16 @@ func run() error {
 		RuntimeJobs:    runtimeJobs,
 		Runner:         runner,
 		TemplateLoader: templateLoader,
-		HermesImage:    cfg.HermesImage,
-		HermesMemory:   cfg.HermesMemory,
-		HermesCPUs:     cfg.HermesCPUs,
+		Provider: runtime.ProviderConfig{
+			DefaultModel: cfg.ModelDefault,
+			Provider:     cfg.ModelProvider,
+			BaseURL:      cfg.ModelBaseURL,
+			APIKey:       cfg.ModelAPIKey,
+			APIMode:      cfg.ModelAPIMode,
+		},
+		HermesImage:  cfg.HermesImage,
+		HermesMemory: cfg.HermesMemory,
+		HermesCPUs:   cfg.HermesCPUs,
 	})
 	weixinClient := weixin.NewClient(cfg.WeixinBaseURL, nil)
 	channelWorker := jobs.NewChannelWorker(jobs.ChannelWorkerDependencies{
