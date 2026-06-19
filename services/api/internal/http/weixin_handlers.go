@@ -3,7 +3,6 @@ package http
 import (
 	"errors"
 	"net/http"
-	"os"
 	"time"
 
 	"agentforge.local/services/api/internal/agents"
@@ -155,11 +154,14 @@ type channelDTO struct {
 }
 
 type pairingSessionDTO struct {
-	ID             string                 `json:"id"`
-	Status         channels.PairingStatus `json:"status"`
-	QRPayload      string                 `json:"qrPayload,omitempty"`
-	QRImageContent string                 `json:"qrImageContent,omitempty"`
-	ExpiresAt      string                 `json:"expiresAt"`
+	ID           string                 `json:"id"`
+	Status       channels.PairingStatus `json:"status"`
+	QRPayload    string                 `json:"qrPayload,omitempty"`
+	// QRPayloadURL is the scannable liteapp URL (e.g.
+	// https://liteapp.weixin.qq.com/q/...). The frontend must encode it
+	// into a QR image client-side; it is plain text, not image data.
+	QRPayloadURL string                 `json:"qrPayloadUrl,omitempty"`
+	ExpiresAt    string                 `json:"expiresAt"`
 }
 
 func newChannelDTO(channel channels.Channel) channelDTO {
@@ -175,18 +177,13 @@ func newChannelDTO(channel channels.Channel) channelDTO {
 }
 
 func (h *WeixinHandlers) toPairingSessionDTO(session channels.PairingSession) pairingSessionDTO {
-	dto := pairingSessionDTO{
-		ID:        session.ID,
-		Status:    session.Status,
-		QRPayload: session.QRPayload,
-		ExpiresAt: session.ExpiresAt,
+	return pairingSessionDTO{
+		ID:           session.ID,
+		Status:       session.Status,
+		QRPayload:    session.QRPayload,
+		QRPayloadURL: session.QRPayloadURL,
+		ExpiresAt:    session.ExpiresAt,
 	}
-	if session.QRImagePath != "" {
-		if data, err := os.ReadFile(session.QRImagePath); err == nil {
-			dto.QRImageContent = string(data)
-		}
-	}
-	return dto
 }
 
 func (h *WeixinHandlers) authorizeAgent(c *gin.Context) (agents.Agent, bool) {

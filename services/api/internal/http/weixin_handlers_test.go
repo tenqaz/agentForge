@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -67,15 +66,13 @@ func TestWeixinRoutesExposePairingSessionsWithoutSecrets(t *testing.T) {
 	}
 
 	channelID := loadWeixinHTTPChannelID(t, database, agentID)
-	imagePath := filepath.Join(t.TempDir(), "qr.txt")
-	if err := os.WriteFile(imagePath, []byte("data:image/png;base64,abc"), 0o644); err != nil {
-		t.Fatalf("write qr image: %v", err)
-	}
+	// After the rename: qr_image_path column now stores the scannable URL
+	// directly (not a file path), so we seed it with the liteapp URL text.
 	if _, err := database.Exec(`
 		UPDATE channel_pairing_sessions
 		SET qr_payload = 'qr-payload', qr_image_path = ?, expires_at = ?
 		WHERE id = ?;
-	`, imagePath, time.Now().Add(5*time.Minute).UTC().Format(time.RFC3339), created.ID); err != nil {
+	`, "https://liteapp.weixin.qq.com/q/test?qrcode=abc123", time.Now().Add(5*time.Minute).UTC().Format(time.RFC3339), created.ID); err != nil {
 		t.Fatalf("seed pairing session content: %v", err)
 	}
 	if _, err := database.Exec(`
@@ -94,7 +91,7 @@ func TestWeixinRoutesExposePairingSessionsWithoutSecrets(t *testing.T) {
 		t.Fatalf("list status = %d, body = %s", listRecorder.Code, listRecorder.Body.String())
 	}
 	list := decodePairingSessionsResponse(t, listRecorder.Body.Bytes()).Sessions
-	if len(list) != 1 || list[0].QRPayload != "qr-payload" || list[0].QRImageContent != "data:image/png;base64,abc" {
+	if len(list) != 1 || list[0].QRPayload != "qr-payload" || list[0].QRPayloadURL != "https://liteapp.weixin.qq.com/q/test?qrcode=abc123" {
 		t.Fatalf("list sessions = %#v", list)
 	}
 

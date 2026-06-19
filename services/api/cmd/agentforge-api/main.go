@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -90,11 +89,7 @@ func run() error {
 		HermesMemory:   cfg.HermesMemory,
 		HermesCPUs:     cfg.HermesCPUs,
 	})
-	weixinClient := weixin.NewClient(
-		strings.TrimSpace(os.Getenv("AGENTFORGE_WEIXIN_BASE_URL")),
-		strings.TrimSpace(os.Getenv("AGENTFORGE_WEIXIN_API_KEY")),
-		nil,
-	)
+	weixinClient := weixin.NewClient(cfg.WeixinBaseURL, nil)
 	channelWorker := jobs.NewChannelWorker(jobs.ChannelWorkerDependencies{
 		Database:     database,
 		ChannelJobs:  channelJobs,

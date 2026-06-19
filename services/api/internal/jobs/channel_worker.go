@@ -38,11 +38,17 @@ type ChannelWorker struct {
 func NewChannelWorker(deps ChannelWorkerDependencies) *ChannelWorker {
 	interval := deps.PollInterval
 	if interval <= 0 {
-		interval = 200 * time.Millisecond
+		// 1.5s matches the cadence the Hermes weixin adapter uses for QR
+		// polling; 200ms (the prior default) was unnecessarily aggressive
+		// against the iLink gateway.
+		interval = 1500 * time.Millisecond
 	}
 	maxAttempts := deps.MaxRefreshAttempts
 	if maxAttempts <= 0 {
-		maxAttempts = 1
+		// Hermes' qr_login allows up to 3 refreshes before giving up; the
+		// prior default of 1 meant a single expiry killed the session
+		// before the user had a realistic chance to scan.
+		maxAttempts = 3
 	}
 	return &ChannelWorker{
 		database:           deps.Database,
@@ -80,12 +86,12 @@ func (w *ChannelWorker) ProcessJob(ctx context.Context, jobID string) error {
 	if err != nil {
 		return w.fail(ctx, job.ID, channel.ID, "qr_request_failed", fmt.Sprintf("request qr code: %v", err), channels.StatusError)
 	}
-	imagePath, err := w.writeQRImage(agent.HermesHomePath, session.ID, qr.QRCodeImageContent)
+	payloadURL, err := w.writeQRPayload(agent.HermesHomePath, session.ID, qr.QRCodeImageContent)
 	if err != nil {
-		return w.fail(ctx, job.ID, channel.ID, "qr_image_write_failed", fmt.Sprintf("write qr image: %v", err), channels.StatusError)
+		return w.fail(ctx, job.ID, channel.ID, "qr_image_write_failed", fmt.Sprintf("write qr payload: %v", err), channels.StatusError)
 	}
 	session.QRPayload = qr.QRCode
-	session.QRImagePath = imagePath
+	session.QRPayloadURL = payloadURL
 	session.AttemptCount = 1
 	if session.ExpiresAt == "" {
 		session.ExpiresAt = time.Now().Add(5 * time.Minute).UTC().Format(time.RFC3339)
@@ -94,13 +100,21 @@ func (w *ChannelWorker) ProcessJob(ctx context.Context, jobID string) error {
 		return fmt.Errorf("update pairing session: %w", err)
 	}
 
+	// redirectBaseURL tracks the redirect_host returned by a
+	// "scaned_but_redirect" status. It is scoped to this single pairing
+	// session so that one agent's redirect cannot bleed into another's
+	// (the weixin.Client is shared across agents).
+	var redirectBaseURL string
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-		status, err := w.weixinClient.GetQRCodeStatus(ctx, weixin.QRStatusRequest{QRCode: qr.QRCode})
+		status, err := w.weixinClient.GetQRCodeStatus(ctx, weixin.QRStatusRequest{
+			QRCode:          qr.QRCode,
+			BaseURLOverride: redirectBaseURL,
+		})
 		if err != nil {
 			return w.fail(ctx, job.ID, channel.ID, "qr_status_failed", fmt.Sprintf("get qr status: %v", err), channels.StatusError)
 		}
@@ -109,6 +123,9 @@ func (w *ChannelWorker) ProcessJob(ctx context.Context, jobID string) error {
 			time.Sleep(w.pollInterval)
 			continue
 		case weixin.StatusScannedButRedirect:
+			if host := weixin.NormalizeRedirectHost(status.RedirectHost); host != "" {
+				redirectBaseURL = host
+			}
 			time.Sleep(w.pollInterval)
 			continue
 		case weixin.StatusExpired:
@@ -131,15 +148,18 @@ func (w *ChannelWorker) ProcessJob(ctx context.Context, jobID string) error {
 				if err != nil {
 					return w.fail(ctx, job.ID, channel.ID, "qr_request_failed", fmt.Sprintf("request qr code: %v", err), channels.StatusError)
 				}
-				imagePath, err = w.writeQRImage(agent.HermesHomePath, session.ID, qr.QRCodeImageContent)
+				payloadURL, err = w.writeQRPayload(agent.HermesHomePath, session.ID, qr.QRCodeImageContent)
 				if err != nil {
-					return w.fail(ctx, job.ID, channel.ID, "qr_image_write_failed", fmt.Sprintf("write qr image: %v", err), channels.StatusError)
+					return w.fail(ctx, job.ID, channel.ID, "qr_image_write_failed", fmt.Sprintf("write qr payload: %v", err), channels.StatusError)
 				}
 				session.QRPayload = qr.QRCode
-				session.QRImagePath = imagePath
+				session.QRPayloadURL = payloadURL
 				if _, err := w.updateSession(ctx, session); err != nil {
 					return fmt.Errorf("update refreshed pairing session: %w", err)
 				}
+				// A new qrcode token starts a fresh negotiation; any
+				// redirect from the previous one no longer applies.
+				redirectBaseURL = ""
 				continue
 			}
 			return w.fail(ctx, job.ID, channel.ID, "qr_expired", "qr expired", channels.StatusNotConfigured)
@@ -223,15 +243,20 @@ func (w *ChannelWorker) updateSession(ctx context.Context, session channels.Pair
 	return w.channels.SetPairingSession(ctx, session)
 }
 
-func (w *ChannelWorker) writeQRImage(homePath, sessionID, content string) (string, error) {
+// writeQRPayload persists the scannable liteapp URL Tencent's iLink
+// gateway returned in qrcode_img_content. The on-disk file name still
+// ends in .qr.txt for backward compatibility — the content is the URL,
+// not image data, despite the legacy "QRImage" terminology used in the
+// surrounding helpers.
+func (w *ChannelWorker) writeQRPayload(homePath, sessionID, content string) (string, error) {
 	path := filepath.Join(homePath, "weixin", "accounts", sessionID+".qr.txt")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("create qr image directory: %w", err)
+		return "", fmt.Errorf("create qr payload directory: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("write qr image: %w", err)
+		return "", fmt.Errorf("write qr payload: %w", err)
 	}
-	return path, nil
+	return content, nil
 }
 
 func (w *ChannelWorker) writeConfirmedCredentials(homePath string, status weixin.QRStatusResponse) error {

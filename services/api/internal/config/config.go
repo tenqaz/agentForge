@@ -3,9 +3,13 @@ package config
 import (
 	"bufio"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"agentforge.local/services/api/internal/weixin"
 )
 
 const (
@@ -29,6 +33,7 @@ type Config struct {
 	HermesMemory  string
 	HermesCPUs    string
 	DockerBin     string
+	WeixinBaseURL string
 }
 
 func Load() (Config, error) {
@@ -42,6 +47,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	weixinBaseURL := value("AGENTFORGE_WEIXIN_BASE_URL", dotEnv, weixin.DefaultBaseURL)
+	if err := validateAbsoluteHTTPURL(weixinBaseURL); err != nil {
+		return Config{}, fmt.Errorf("AGENTFORGE_WEIXIN_BASE_URL: %w", err)
+	}
+
 	return Config{
 		HTTPAddr:      value("AGENTFORGE_HTTP_ADDR", dotEnv, defaultHTTPAddr),
 		PublicBaseURL: value("AGENTFORGE_PUBLIC_BASE_URL", dotEnv, defaultPublicBaseURL),
@@ -52,7 +62,26 @@ func Load() (Config, error) {
 		HermesMemory:  value("AGENTFORGE_HERMES_MEMORY", dotEnv, defaultHermesMemory),
 		HermesCPUs:    value("AGENTFORGE_HERMES_CPUS", dotEnv, defaultHermesCPUs),
 		DockerBin:     defaultDockerBin,
+		WeixinBaseURL: weixinBaseURL,
 	}, nil
+}
+
+// validateAbsoluteHTTPURL fails fast if a configured base URL is missing
+// the http:// or https:// scheme. Without this check the API server
+// would start successfully but every weixin gateway call would fail
+// with `unsupported protocol scheme ""`.
+func validateAbsoluteHTTPURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("invalid url %q: %w", raw, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("must start with http:// or https:// (got %q)", raw)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("missing host in %q", raw)
+	}
+	return nil
 }
 
 func value(key string, dotEnv map[string]string, fallback string) string {

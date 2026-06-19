@@ -89,11 +89,14 @@ func (r *Repository) TransitionStatus(ctx context.Context, id string, next Statu
 }
 
 func (r *Repository) SetPairingSession(ctx context.Context, session PairingSession) (PairingSession, error) {
+	// NOTE: the qr_image_path column is a misnomer kept for compatibility
+	// — it actually stores the scannable liteapp URL, mapped to
+	// PairingSession.QRPayloadURL.
 	_, err := r.database.ExecContext(ctx, `
 		UPDATE channel_pairing_sessions
 		SET status = ?, qr_payload = ?, qr_image_path = ?, expires_at = ?, attempt_count = ?, last_error_code = ?, last_error_message = ?, updated_at = datetime('now')
 		WHERE id = ?;
-	`, session.Status, session.QRPayload, session.QRImagePath, session.ExpiresAt, session.AttemptCount, session.LastErrorCode, session.LastErrorMessage, session.ID)
+	`, session.Status, session.QRPayload, session.QRPayloadURL, session.ExpiresAt, session.AttemptCount, session.LastErrorCode, session.LastErrorMessage, session.ID)
 	if err != nil {
 		return PairingSession{}, err
 	}
@@ -108,7 +111,7 @@ func (r *Repository) GetActivePairingSession(ctx context.Context, channelID stri
 		WHERE agent_channel_id = ? AND status IN ('pending', 'connected')
 		ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at DESC, id DESC
 		LIMIT 1;
-	`, channelID).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRImagePath, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
+	`, channelID).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRPayloadURL, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PairingSession{}, ErrNotFound
 	}
@@ -129,7 +132,7 @@ func (r *Repository) ListPairingSessions(ctx context.Context, channelID string) 
 	var sessions []PairingSession
 	for rows.Next() {
 		var session PairingSession
-		if err := rows.Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRImagePath, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt); err != nil {
+		if err := rows.Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRPayloadURL, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, session)
@@ -143,7 +146,7 @@ func (r *Repository) GetPairingSessionByID(ctx context.Context, channelID, sessi
 		SELECT id, agent_channel_id, status, qr_payload, qr_image_path, expires_at, attempt_count, last_error_code, last_error_message, created_at, updated_at
 		FROM channel_pairing_sessions
 		WHERE agent_channel_id = ? AND id = ?;
-	`, channelID, sessionID).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRImagePath, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
+	`, channelID, sessionID).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRPayloadURL, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PairingSession{}, ErrNotFound
 	}

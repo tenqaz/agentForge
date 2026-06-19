@@ -150,7 +150,10 @@ export type PairingSession = {
   id: string;
   status: PairingStatus;
   qrPayload?: string;
-  qrImageContent?: string;
+  // qrPayloadUrl is the scannable liteapp URL (plain text, e.g.
+  // https://liteapp.weixin.qq.com/q/...). The component must encode it
+  // into a QR image client-side; it is NOT image data.
+  qrPayloadUrl?: string;
   expiresAt: string;
 };
 

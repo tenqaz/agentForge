@@ -42,17 +42,25 @@ type Channel struct {
 }
 
 type PairingSession struct {
-	ID               string        `json:"id"`
-	AgentChannelID   string        `json:"agentChannelId"`
-	Status           PairingStatus `json:"status"`
-	QRPayload        string        `json:"qrPayload"`
-	QRImagePath      string        `json:"qrImagePath"`
-	ExpiresAt        string        `json:"expiresAt"`
-	AttemptCount     int           `json:"attemptCount"`
-	LastErrorCode    string        `json:"lastErrorCode"`
-	LastErrorMessage string        `json:"lastErrorMessage"`
-	CreatedAt        string        `json:"createdAt"`
-	UpdatedAt        string        `json:"updatedAt"`
+	ID             string        `json:"id"`
+	AgentChannelID string        `json:"agentChannelId"`
+	Status         PairingStatus `json:"status"`
+	// QRPayload is the hex token returned in the iLink "qrcode" field;
+	// used as the qrcode= query param when polling get_qrcode_status.
+	QRPayload string `json:"qrPayload"`
+	// QRPayloadURL is the scannable liteapp URL the user's WeChat app
+	// must scan, returned in the iLink "qrcode_img_content" field.
+	//
+	// IMPORTANT: this is plain URL text (e.g.
+	// https://liteapp.weixin.qq.com/q/...), NOT image data. The
+	// frontend is responsible for encoding it into a QR image.
+	QRPayloadURL     string `json:"qrPayloadUrl"`
+	ExpiresAt        string `json:"expiresAt"`
+	AttemptCount     int    `json:"attemptCount"`
+	LastErrorCode    string `json:"lastErrorCode"`
+	LastErrorMessage string `json:"lastErrorMessage"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
 }
 
 var transitions = map[Status]map[Status]struct{}{

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
+import * as QRCode from "qrcode";
 
 import { useApiClient } from "@/components/app-shell";
 import {
@@ -28,8 +29,20 @@ export default function WeixinChannelPanel({
   const apiClient = useApiClient();
   const [channel, setChannel] = useState(initialChannel);
   const [session, setSession] = useState<PairingSession | null>(initialSession);
+  const [qrDataURL, setQrDataURL] = useState<string>("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+
+  // Encode qrPayloadUrl into a scannable QR image whenever it changes
+  useEffect(() => {
+    if (!session?.qrPayloadUrl) {
+      setQrDataURL("");
+      return;
+    }
+    QRCode.toDataURL(session.qrPayloadUrl, { width: 320, margin: 2 })
+      .then(setQrDataURL)
+      .catch(() => setQrDataURL(""));
+  }, [session?.qrPayloadUrl]);
 
   const refresh = useCallback(async () => {
     if (!session?.id) {
@@ -130,12 +143,12 @@ export default function WeixinChannelPanel({
             </span>
           </div>
           <p className="mt-3 text-sm text-stone-600">Expires at {session.expiresAt}</p>
-          {session.qrImageContent ? (
+          {qrDataURL ? (
             <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-stone-900/10 bg-stone-50 p-4">
               <Image
                 alt="Weixin QR code"
                 className="mx-auto rounded-[1rem]"
-                src={session.qrImageContent}
+                src={qrDataURL}
                 style={{ width: "auto", height: "auto", maxHeight: "18rem" }}
                 unoptimized
                 width={320}

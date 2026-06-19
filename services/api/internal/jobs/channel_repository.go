@@ -255,7 +255,7 @@ func (r *ChannelRepository) getActivePairingSession(ctx context.Context, channel
 		SELECT id, agent_channel_id, status, qr_payload, qr_image_path, expires_at, attempt_count, last_error_code, last_error_message, created_at, updated_at
 		FROM channel_pairing_sessions
 		WHERE agent_channel_id = ? AND status = 'pending';
-	`, channelID).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRImagePath, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
+	`, channelID).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRPayloadURL, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return channels.PairingSession{}, ErrNotFound
 	}
@@ -279,6 +279,6 @@ func (r *ChannelRepository) createPairingSession(ctx context.Context, channelID 
 		SELECT id, agent_channel_id, status, qr_payload, qr_image_path, expires_at, attempt_count, last_error_code, last_error_message, created_at, updated_at
 		FROM channel_pairing_sessions
 		WHERE id = ?;
-	`, id).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRImagePath, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
+	`, id).Scan(&session.ID, &session.AgentChannelID, &session.Status, &session.QRPayload, &session.QRPayloadURL, &session.ExpiresAt, &session.AttemptCount, &session.LastErrorCode, &session.LastErrorMessage, &session.CreatedAt, &session.UpdatedAt)
 	return session, err
 }

@@ -47,7 +47,7 @@ test("user can create an agent and complete mocked Weixin pairing", async ({
     id: "pairing-1",
     status: pairingPolls >= 2 ? "connected" : "pending",
     qrPayload: "weixin://pairing/qr-1",
-    qrImageContent: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQH9mU7W6QAAAABJRU5ErkJggg==",
+    qrPayloadUrl: "https://liteapp.weixin.qq.com/q/test?qrcode=abc123",
     expiresAt: "2026-06-15T00:05:00Z",
   });
 
