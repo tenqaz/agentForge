@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -126,6 +127,7 @@ type mvpFixture struct {
 	dataDir       string
 	runtimeWorker *jobs.RuntimeWorker
 	channelWorker *jobs.ChannelWorker
+	runner        *integrationRunner
 }
 
 func newMVPFixture(t *testing.T) mvpFixture {
@@ -143,11 +145,11 @@ func newMVPFixture(t *testing.T) mvpFixture {
 	templateService := templates.NewService(templateRepo, templateStore)
 	runtimeJobs := jobs.NewRuntimeRepository(database)
 	agentRepo := agents.NewRepository(database)
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, nil, dataDir)
+	runner := &integrationRunner{}
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, dataDir)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)
-	runner := &integrationRunner{}
 
 	runtimeWorker := jobs.NewRuntimeWorker(jobs.RuntimeWorkerDependencies{
 		Database:       database,
@@ -199,6 +201,7 @@ func newMVPFixture(t *testing.T) mvpFixture {
 		dataDir:       dataDir,
 		runtimeWorker: runtimeWorker,
 		channelWorker: channelWorker,
+		runner:        runner,
 	}
 }
 
@@ -233,22 +236,52 @@ func seedIntegrationUsers(t *testing.T, database *sql.DB) {
 	}
 }
 
-type integrationRunner struct{}
+type integrationRunner struct {
+	mu          sync.Mutex
+	stopErr     error
+	removeErr   error
+	stopCalls   int
+	removeCalls int
+}
 
 func (r *integrationRunner) EnsureRunning(_ context.Context, _ runtime.ContainerSpec) error {
 	return nil
 }
 
 func (r *integrationRunner) Stop(_ context.Context, _ string) error {
-	return nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stopCalls++
+	return r.stopErr
 }
 
 func (r *integrationRunner) Remove(_ context.Context, _ string) error {
-	return nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.removeCalls++
+	return r.removeErr
 }
 
 func (r *integrationRunner) Inspect(_ context.Context, _ string) (runtime.ContainerStatus, error) {
 	return runtime.ContainerStatus{Exists: true, Running: true, Status: "running"}, nil
+}
+
+func (r *integrationRunner) StopCalls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.stopCalls
+}
+
+func (r *integrationRunner) RemoveCalls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.removeCalls
+}
+
+func (r *integrationRunner) SetStopError(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stopErr = err
 }
 
 type integrationWeixinClient struct {
