@@ -143,7 +143,7 @@ func newMVPFixture(t *testing.T) mvpFixture {
 	templateService := templates.NewService(templateRepo, templateStore)
 	runtimeJobs := jobs.NewRuntimeRepository(database)
 	agentRepo := agents.NewRepository(database)
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, dataDir)
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, nil, dataDir)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)

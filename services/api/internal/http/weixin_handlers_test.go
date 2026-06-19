@@ -134,7 +134,7 @@ func newWeixinTestRouter(t *testing.T) (http.Handler, *auth.SessionManager, *sql
 	router := NewRouter(Dependencies{
 		AuthRepository:       auth.NewRepository(database),
 		SessionManager:       manager,
-		AgentService:         agents.NewService(database, agentRepository, runtimeJobRepository, dataDir),
+		AgentService:         agents.NewService(database, agentRepository, runtimeJobRepository, nil, dataDir),
 		RuntimeJobRepository: runtimeJobRepository,
 		ChannelService:       channelService,
 		ChannelRepository:    channelRepository,
