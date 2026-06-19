@@ -226,3 +226,32 @@ func copyDir(source, target string) error {
 	}
 	return nil
 }
+
+// DestroyHome removes the agent's hermes-home directory. It is idempotent:
+// a missing directory is treated as success. The path is validated to end
+// with "hermes-home" and to be at least three levels deep, refusing root or
+// other shallow paths to avoid accidental destruction.
+func DestroyHome(homePath string) error {
+	trimmed := strings.TrimSpace(homePath)
+	if trimmed == "" {
+		return errors.New("hermes home path is empty")
+	}
+	abs, err := filepath.Abs(trimmed)
+	if err != nil {
+		return fmt.Errorf("resolve hermes home path: %w", err)
+	}
+	cleaned := filepath.Clean(abs)
+	if filepath.Base(cleaned) != "hermes-home" {
+		return fmt.Errorf("refuse to destroy non-hermes-home path: %s", cleaned)
+	}
+	parent := filepath.Dir(cleaned)
+	grandparent := filepath.Dir(parent)
+	separator := string(filepath.Separator)
+	if grandparent == separator || grandparent == "." || grandparent == filepath.VolumeName(grandparent)+separator {
+		return fmt.Errorf("refuse to destroy shallow path: %s", cleaned)
+	}
+	if err := os.RemoveAll(cleaned); err != nil {
+		return fmt.Errorf("remove hermes home: %w", err)
+	}
+	return nil
+}
