@@ -301,3 +301,29 @@ func insertAgentFixture(t *testing.T, database *sql.DB, agentID, ownerUserID str
 		t.Fatalf("insert agent fixture: %v", err)
 	}
 }
+
+func TestStatusCanDelete(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		status Status
+		want   bool
+	}{
+		{StatusCreating, true},
+		{StatusRunning, true},
+		{StatusStopped, true},
+		{StatusError, true},
+		{StatusProvisioning, false},
+		{StatusStarting, false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(string(tc.status), func(t *testing.T) {
+			t.Parallel()
+			if got := tc.status.CanDelete(); got != tc.want {
+				t.Fatalf("%s.CanDelete() = %t, want %t", tc.status, got, tc.want)
+			}
+		})
+	}
+}
