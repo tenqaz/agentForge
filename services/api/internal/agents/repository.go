@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -184,4 +185,35 @@ func (r *Repository) HasAgentsForTemplate(ctx context.Context, templateID string
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// Delete physically removes the agents row by id. Foreign-key CASCADE on
+// agent_runtime_events, agent_channels, runtime_jobs cleans up children.
+// Returns ErrNotFound if no row was affected.
+func (r *Repository) Delete(ctx context.Context, id string) error {
+	result, err := r.database.ExecContext(ctx,
+		`DELETE FROM agents WHERE id = ?;`, id)
+	if err != nil {
+		return fmt.Errorf("delete agent row: %w", err)
+	}
+	return requireAffected(result)
+}
+
+// MarkDeleteFailed forces the agent into the 'error' state and records
+// the failure code and message. It bypasses the state-machine transitions
+// table because some legitimate sources (e.g. stopped) cannot otherwise
+// reach error. Returns ErrNotFound if no row was affected.
+func (r *Repository) MarkDeleteFailed(ctx context.Context, id, code, message string) error {
+	result, err := r.database.ExecContext(ctx, `
+		UPDATE agents
+		SET status = ?,
+		    last_error_code = ?,
+		    last_error_message = ?,
+		    updated_at = datetime('now')
+		WHERE id = ?;
+	`, StatusError, code, message, id)
+	if err != nil {
+		return fmt.Errorf("update agent to error: %w", err)
+	}
+	return requireAffected(result)
 }
