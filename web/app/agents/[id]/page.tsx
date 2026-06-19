@@ -10,6 +10,7 @@ import AgentRuntimeStatus from "@/components/agent-runtime-status";
 import WeixinChannelPanel from "@/components/weixin-channel-panel";
 import {
   apiErrorMessage,
+  deleteAgent,
   getAgent,
   getRuntime,
   getWeixinChannel,
@@ -35,6 +36,8 @@ export default function AgentDetailPage({
   const [session, setSession] = useState<PairingSession | null>(null);
   const [errorStatus, setErrorStatus] = useState<number>();
   const [error, setError] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (loading) {
@@ -87,16 +90,67 @@ export default function AgentDetailPage({
     };
   }, [apiClient, id, loading, router, user]);
 
+  async function handleDelete() {
+    setDeleting(true);
+    setError("");
+    setErrorStatus(undefined);
+    const response = await deleteAgent(apiClient, id);
+    if (!response.ok) {
+      setDeleting(false);
+      setErrorStatus(response.status);
+      setError(apiErrorMessage(response.error.code, response.error.message));
+      setConfirmingDelete(false);
+      return;
+    }
+    router.push("/agents");
+  }
+
   return (
     <section className="grid gap-6">
       <div className="panel rounded-[2rem] p-8">
-        <p className="eyebrow">Agent Detail</p>
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950">
-          {agent?.name ?? "Loading agent..."}
-        </h1>
-        <p className="mt-3 text-base leading-7 text-stone-600">
-          Agent ID: {id}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">Agent Detail</p>
+            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950">
+              {agent?.name ?? "Loading agent..."}
+            </h1>
+            <p className="mt-3 text-base leading-7 text-stone-600">
+              Agent ID: {id}
+            </p>
+          </div>
+          {agent ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {confirmingDelete ? (
+                <>
+                  <button
+                    className="rounded-full border border-red-300 bg-red-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={deleting}
+                    onClick={() => void handleDelete()}
+                    type="button"
+                  >
+                    {deleting ? "Deleting..." : "Confirm Delete"}
+                  </button>
+                  <button
+                    className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={deleting}
+                    onClick={() => setConfirmingDelete(false)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="rounded-full border border-red-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 hover:bg-red-50"
+                  onClick={() => setConfirmingDelete(true)}
+                  type="button"
+                >
+                  Delete Agent
+                </button>
+              )}
+            </div>
+          ) : null}
+        </div>
       </div>
       {error ? (
         <ApiErrorState message={error} status={errorStatus} />

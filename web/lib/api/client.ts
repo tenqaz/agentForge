@@ -356,6 +356,10 @@ export async function restartRuntime(client: ApiClient, agentId: string) {
   );
 }
 
+export async function deleteAgent(client: ApiClient, agentId: string) {
+  return client.delete<void>(`/api/agents/${agentId}`);
+}
+
 export async function getWeixinChannel(client: ApiClient, agentId: string) {
   return client.get<ChannelResponse>(`/api/agents/${agentId}/channels/weixin`);
 }
@@ -406,6 +410,10 @@ export function apiErrorMessage(
       return "This page requires an admin account.";
     case "agent_not_running":
       return "The agent is not running yet.";
+    case "agent_cannot_delete":
+      return "Cannot delete this agent in its current state. Please wait until it stabilizes.";
+    case "agent_has_unfinished_jobs":
+      return "This agent has unfinished runtime jobs. Please wait and retry.";
     case "runtime_unavailable":
       return "The runtime is not available yet.";
     case "conflict":
