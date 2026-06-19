@@ -282,3 +282,18 @@ func isUniqueConstraint(err error) bool {
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "unique")
 }
+
+// HasUnfinishedByAgent reports whether the agent has any runtime job that
+// is still queued or running (i.e. not in a terminal state).
+func (r *RuntimeRepository) HasUnfinishedByAgent(ctx context.Context, agentID string) (bool, error) {
+	var count int
+	err := r.database.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM runtime_jobs
+		WHERE agent_id = ? AND status IN (?, ?);
+	`, agentID, StatusQueued, StatusRunning).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("count unfinished runtime jobs: %w", err)
+	}
+	return count > 0, nil
+}
