@@ -105,7 +105,11 @@ func (r *dockerRunner) Stop(ctx context.Context, containerName string) error {
 func (r *dockerRunner) Remove(ctx context.Context, containerName string) error {
 	output, err := exec.CommandContext(ctx, r.dockerBin, "rm", "-f", containerName).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("docker rm failed: %w: %s", err, strings.TrimSpace(string(output)))
+		trimmed := strings.TrimSpace(string(output))
+		if strings.Contains(trimmed, "No such object") || strings.Contains(trimmed, "No such container") {
+			return ErrContainerNotFound
+		}
+		return fmt.Errorf("docker rm failed: %w: %s", err, trimmed)
 	}
 	return nil
 }

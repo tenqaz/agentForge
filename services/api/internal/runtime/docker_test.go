@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,4 +169,39 @@ func TestDockerRunnerEnsureRunningNoopsWhenContainerAlreadyRunning(t *testing.T)
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func TestDockerRunnerRemoveReturnsNotFoundWhenContainerMissing(t *testing.T) {
+	ctx := context.Background()
+	workdir := t.TempDir()
+	stubPath := filepath.Join(workdir, "docker")
+	script := "#!/bin/sh\nprintf 'Error: No such container: %s' \"$3\" >&2\nexit 1\n"
+	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write stub docker: %v", err)
+	}
+	runner := NewDockerRunner(stubPath)
+
+	err := runner.Remove(ctx, "agentforge-hermes-missing")
+	if !errors.Is(err, ErrContainerNotFound) {
+		t.Fatalf("Remove err = %v, want ErrContainerNotFound", err)
+	}
+}
+
+func TestDockerRunnerRemoveWrapsOtherErrors(t *testing.T) {
+	ctx := context.Background()
+	workdir := t.TempDir()
+	stubPath := filepath.Join(workdir, "docker")
+	script := "#!/bin/sh\nprintf 'Error: permission denied' >&2\nexit 1\n"
+	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write stub docker: %v", err)
+	}
+	runner := NewDockerRunner(stubPath)
+
+	err := runner.Remove(ctx, "agentforge-hermes-x")
+	if err == nil {
+		t.Fatal("Remove returned nil, want error")
+	}
+	if errors.Is(err, ErrContainerNotFound) {
+		t.Fatalf("Remove err = %v, did not expect ErrContainerNotFound", err)
+	}
 }
