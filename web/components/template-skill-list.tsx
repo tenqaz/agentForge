@@ -15,11 +15,15 @@ import {
 export default function TemplateSkillList({
   initialTemplate,
   initialSkills,
+  busySection,
+  onBusySectionChange,
   onTemplateShift,
   onSkillsChange,
 }: {
   initialTemplate: Template;
   initialSkills: Skill[];
+  busySection: string;
+  onBusySectionChange: (section: string) => void;
   onTemplateShift: (template: Template) => void;
   onSkillsChange: (skills: Skill[]) => void;
 }) {
@@ -41,13 +45,16 @@ export default function TemplateSkillList({
 
   async function handleAddSkill() {
     setPendingSkillId("create");
+    onBusySectionChange("skills");
     setError("");
     if (!skillFile) {
       setPendingSkillId("");
+      onBusySectionChange("");
       return;
     }
     const response = await addTemplateSkill(apiClient, template.id, skillFile);
     setPendingSkillId("");
+    onBusySectionChange("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
@@ -63,9 +70,11 @@ export default function TemplateSkillList({
 
   async function handleDeleteSkill(skillId: string) {
     setPendingSkillId(skillId);
+    onBusySectionChange("skills");
     setError("");
     const response = await deleteTemplateSkill(apiClient, template.id, skillId);
     setPendingSkillId("");
+    onBusySectionChange("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
@@ -102,7 +111,7 @@ export default function TemplateSkillList({
               </div>
               <button
                 className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 hover:border-stone-900 hover:bg-stone-900 hover:text-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={pendingSkillId === skill.id}
+                disabled={pendingSkillId === skill.id || busySection === "publication"}
                 onClick={() => void handleDeleteSkill(skill.id)}
                 type="button"
               >
@@ -128,7 +137,9 @@ export default function TemplateSkillList({
         </p>
         <button
           className="w-fit rounded-full bg-stone-950 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 hover:bg-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={pendingSkillId === "create" || !skillFile}
+          disabled={
+            pendingSkillId === "create" || !skillFile || busySection === "publication"
+          }
           onClick={() => void handleAddSkill()}
           type="button"
         >

@@ -19,11 +19,15 @@ export default function TemplateEditor({
   initialTemplate,
   initialSoul,
   initialUserContent,
+  busySection,
+  onBusySectionChange,
   onTemplateChange,
 }: {
   initialTemplate: Template;
   initialSoul: string;
   initialUserContent: string;
+  busySection: string;
+  onBusySectionChange: (section: string) => void;
   onTemplateChange: (template: Template, soul: string, userContent: string) => void;
 }) {
   const apiClient = useApiClient();
@@ -49,6 +53,7 @@ export default function TemplateEditor({
 
   async function handleMetadataSave() {
     setPending("metadata");
+    onBusySectionChange("metadata");
     setError("");
     const response = await updateAdminTemplate(
       apiClient,
@@ -57,6 +62,7 @@ export default function TemplateEditor({
       description,
     );
     setPending("");
+    onBusySectionChange("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
@@ -66,9 +72,11 @@ export default function TemplateEditor({
 
   async function handleSoulSave() {
     setPending("soul");
+    onBusySectionChange("soul");
     setError("");
     const response = await saveTemplateSoul(apiClient, template.id, soul);
     setPending("");
+    onBusySectionChange("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
@@ -78,9 +86,11 @@ export default function TemplateEditor({
 
   async function handleUserSave() {
     setPending("user");
+    onBusySectionChange("user");
     setError("");
     const response = await saveTemplateUser(apiClient, template.id, userContent);
     setPending("");
+    onBusySectionChange("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
@@ -90,12 +100,14 @@ export default function TemplateEditor({
 
   async function handlePublishToggle() {
     setPending("publication");
+    onBusySectionChange("publication");
     setError("");
     const response =
       template.status === "published"
         ? await unpublishTemplate(apiClient, template.id)
         : await publishTemplate(apiClient, template.id);
     setPending("");
+    onBusySectionChange("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
@@ -105,9 +117,11 @@ export default function TemplateEditor({
 
   async function handleArchive() {
     setPending("archive");
+    onBusySectionChange("archive");
     setError("");
     const response = await archiveAdminTemplate(apiClient, template.id);
     setPending("");
+    onBusySectionChange("");
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
@@ -128,7 +142,11 @@ export default function TemplateEditor({
           <div className="flex flex-wrap items-center justify-end gap-3">
             <button
               className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 hover:border-stone-900 hover:bg-stone-900 hover:text-stone-50 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={pending === "publication" || pending === "archive"}
+              disabled={
+                pending === "publication" ||
+                pending === "archive" ||
+                busySection === "skills"
+              }
               onClick={() => void handlePublishToggle()}
               type="button"
             >
@@ -144,7 +162,7 @@ export default function TemplateEditor({
               <>
                 <button
                   className="rounded-full border border-red-300 bg-red-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={pending === "archive"}
+                  disabled={pending === "archive" || busySection === "skills"}
                   onClick={() => void handleArchive()}
                   type="button"
                 >
@@ -152,7 +170,7 @@ export default function TemplateEditor({
                 </button>
                 <button
                   className="rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={pending === "archive"}
+                  disabled={pending === "archive" || busySection === "skills"}
                   onClick={() => setConfirmArchive(false)}
                   type="button"
                 >
@@ -162,7 +180,11 @@ export default function TemplateEditor({
             ) : (
               <button
                 className="rounded-full border border-red-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={pending === "publication" || pending === "archive"}
+                disabled={
+                  pending === "publication" ||
+                  pending === "archive" ||
+                  busySection === "skills"
+                }
                 onClick={() => setConfirmArchive(true)}
                 type="button"
               >

@@ -31,6 +31,7 @@ export default function AdminTemplateDetailPage({
   const [userContent, setUserContent] = useState("");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [error, setError] = useState("");
+  const [busySection, setBusySection] = useState("");
 
   useEffect(() => {
     if (loading) {
@@ -102,9 +103,11 @@ export default function AdminTemplateDetailPage({
       {template ? (
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <TemplateEditor
+            busySection={busySection}
             initialSoul={soul}
             initialTemplate={template}
             initialUserContent={userContent}
+            onBusySectionChange={setBusySection}
             onTemplateChange={(nextTemplate, nextSoul, nextUser) => {
               setTemplate(nextTemplate);
               setSoul(nextSoul);
@@ -112,8 +115,10 @@ export default function AdminTemplateDetailPage({
             }}
           />
           <TemplateSkillList
+            busySection={busySection}
             initialSkills={skills}
             initialTemplate={template}
+            onBusySectionChange={setBusySection}
             onSkillsChange={setSkills}
             onTemplateShift={setTemplate}
           />

@@ -270,3 +270,154 @@ test("admin can create, edit, add/delete skill, and publish a template", async (
   await expect(page).toHaveURL(/\/admin\/templates$/);
   await expect(page.getByRole("link", { name: "Support Coach" })).toHaveCount(0);
 });
+
+test("publish is disabled while skill upload is in progress", async ({ page }) => {
+  let signedIn = false;
+  let template = {
+    id: "template-1",
+    name: "Support Coach",
+    description: "Helps ops teams triage requests.",
+    status: "draft" as const,
+    version: 1,
+    createdAt: "2026-06-15T00:00:00Z",
+    updatedAt: "2026-06-15T00:00:00Z",
+    publishedAt: null as string | null,
+  };
+  const soul = "# Soul\nYou are calm and direct.";
+  const userContent = "# User\nPrefer concise answers.";
+  const skills = [
+    {
+      id: "skill-1",
+      templateId: template.id,
+      skillName: "triage",
+      checksum: "abc123",
+      createdAt: "2026-06-15T00:00:00Z",
+    },
+  ];
+
+  let releaseUpload: (() => void) | null = null;
+  const uploadBlocked = new Promise<void>((resolve) => {
+    releaseUpload = resolve;
+  });
+
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const { pathname } = url;
+
+    if (pathname === "/api/session" && request.method() === "GET") {
+      await route.fulfill({
+        status: signedIn ? 200 : 401,
+        contentType: "application/json",
+        body: JSON.stringify(
+          signedIn
+            ? { user: { id: "admin-1", email: "admin@example.com", role: "admin" } }
+            : { error: "unauthorized" },
+        ),
+      });
+      return;
+    }
+
+    if (pathname === "/api/sessions" && request.method() === "POST") {
+      signedIn = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          user: { id: "admin-1", email: "admin@example.com", role: "admin" },
+        }),
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/templates/${template.id}` && request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ template }),
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/templates/${template.id}/soul` && request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ content: soul }),
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/templates/${template.id}/user` && request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ content: userContent }),
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/templates/${template.id}/skills`) {
+      if (request.method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ skills }),
+        });
+        return;
+      }
+      await uploadBlocked;
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          skill: {
+            id: "skill-2",
+            templateId: template.id,
+            skillName: "handoff",
+            checksum: "def456",
+            createdAt: "2026-06-15T00:00:00Z",
+          },
+        }),
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/templates/${template.id}/publication`) {
+      template = {
+        ...template,
+        status: "published",
+        publishedAt: "2026-06-15T00:00:00Z",
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ template }),
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, body: `Unhandled ${request.method()} ${pathname}` });
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("admin@example.com");
+  await page.getByLabel("Password").fill("secret");
+  await page.getByRole("button", { name: "Sign In" }).click();
+
+  await page.goto("/admin/templates/template-1");
+  await expect(page.getByRole("button", { name: "Publish" })).toBeEnabled();
+
+  const skillZip = join(mkdtempSync(join(tmpdir(), "agentforge-skill-")), "handoff.zip");
+  writeFileSync(skillZip, "placeholder");
+  await page.getByLabel("Skill ZIP").setInputFiles(skillZip);
+  await page.getByRole("button", { name: "Upload Skill" }).click();
+
+  await expect(page.getByRole("button", { name: "Publishing..." })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Publish" })).toBeDisabled();
+
+  releaseUpload?.();
+
+  await expect(page.getByText("handoff")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publish" })).toBeEnabled();
+});
