@@ -925,4 +925,8 @@
   .tmpl-card h4 { font-size: 15px; font-weight: 600; }
   .tmpl-card p { color: var(--muted); font-size: 13px; line-height: 1.55; }
   .tmpl-card .t-foot { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; }
+
+  /* ---- Progress bar（agent-provision 供应进度）---- */
+  .progress-bar { height: 4px; background: var(--border); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease; }
 }
