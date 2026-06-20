@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useApiClient, useSessionState } from "@/components/app-shell";
-import { Card, CardTitle } from "@/components/ui/card";
+import Breadcrumbs from "@/components/ui/breadcrumbs";
 import StatusChip from "@/components/ui/status-chip";
 import TemplateEditor from "@/components/template-editor";
 import TemplateSkillList from "@/components/template-skill-list";
@@ -90,35 +90,45 @@ export default function AdminTemplateDetailPage({
   }, [apiClient, id, sessionLoading, router, user]);
 
   return (
-    <section className="flex flex-col gap-6">
-      <Card>
-        <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
-          Template 详情
-        </p>
-        <CardTitle as="h1" className="mt-2 text-3xl">
-          {template?.name ?? "加载中..."}
-        </CardTitle>
-        {template ? (
-          <div className="mt-3 flex items-center gap-2">
-            <StatusChip kind="template" value={template.status} />
-            <span className="font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
-              v{template.version}
-            </span>
-          </div>
-        ) : null}
-      </Card>
+    <>
+      <Breadcrumbs
+        items={[
+          { label: "模板管理", href: "/admin/templates" },
+          { label: template?.name ?? "模板" },
+        ]}
+      />
+
+      <div className="page-head">
+        <div>
+          <span className="meta">编辑模板</span>
+          <h1>{template?.name ?? "加载中…"}</h1>
+          {template ? (
+            <div className="row" style={{ gap: 8, marginTop: 8 }}>
+              <StatusChip kind="template" value={template.status} />
+              <span className="tag tag-mono">v{template.version}</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
 
       {error ? (
         <div
           role="alert"
-          className="rounded-[var(--radius-xl)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-4 py-3 text-sm text-[color:var(--color-danger)]"
+          className="card"
+          style={{
+            padding: "12px 16px",
+            borderColor: "color-mix(in oklch, var(--danger) 25%, var(--border))",
+            background: "var(--danger-soft)",
+            color: "var(--danger)",
+            fontSize: 14,
+          }}
         >
           {error}
         </div>
       ) : null}
 
       {template ? (
-        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid-2-1">
           <TemplateEditor
             busySection={busySection}
             initialSoul={soul}
@@ -141,6 +151,6 @@ export default function AdminTemplateDetailPage({
           />
         </div>
       ) : null}
-    </section>
+    </>
   );
 }
