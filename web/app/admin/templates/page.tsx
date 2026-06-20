@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronRight, Inbox, LayoutTemplate, Plus, Trash2 } from "lucide-react";
+import { Inbox, Plus, Trash2 } from "lucide-react";
 
 import ApiErrorState from "@/components/api-error-state";
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import Button from "@/components/ui/button";
 import EmptyState from "@/components/ui/empty-state";
+import Modal from "@/components/ui/modal";
 import Spinner from "@/components/ui/spinner";
 import StatusChip from "@/components/ui/status-chip";
+import Tabs from "@/components/ui/tabs";
 import {
   apiErrorMessage,
   archiveAdminTemplate,
@@ -28,6 +30,7 @@ export default function AdminTemplatesPage() {
   const [confirmingTemplateId, setConfirmingTemplateId] = useState("");
   const [pendingTemplateId, setPendingTemplateId] = useState("");
   const [fetching, setFetching] = useState(true);
+  const [tab, setTab] = useState<string>("published");
 
   useEffect(() => {
     if (sessionLoading) {
@@ -76,115 +79,146 @@ export default function AdminTemplatesPage() {
     setTemplates((current) => current.filter((template) => template.id !== templateId));
   }
 
+  const drafts = templates.filter((t) => t.status === "draft");
+  const published = templates.filter((t) => t.status === "published");
+  const archived = templates.filter((t) => t.status === "archived");
+  const visible = tab === "published" ? published : tab === "drafts" ? drafts : archived;
+  const confirmingTemplate = templates.find((t) => t.id === confirmingTemplateId) ?? null;
+
   return (
-    <section className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1.5">
-          <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
-            管理 Templates
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight text-[color:var(--color-fg)] sm:text-3xl">
-            起草、发布、克隆 Template 版本
-          </h1>
+    <>
+      <div className="page-head">
+        <div>
+          <span className="meta">模板管理</span>
+          <h1>模板管理</h1>
+          <p className="lead">起草、发布、归档模板版本。已发布的模板对所有用户可见。</p>
         </div>
         <Link href="/admin/templates/new">
           <Button variant="primary" leftIcon={<Plus size={16} strokeWidth={1.75} />}>
             新建草稿
           </Button>
         </Link>
-      </header>
+      </div>
 
       {error ? <ApiErrorState message={error} status={errorStatus} /> : null}
 
       {fetching ? (
-        <div className="flex items-center gap-2 px-1 text-sm text-[color:var(--color-fg-muted)]">
+        <div className="row" style={{ color: "var(--muted)", fontSize: 13 }}>
           <Spinner size="sm" />
-          <span>加载中...</span>
+          <span>加载中…</span>
         </div>
       ) : templates.length === 0 && !error ? (
         <EmptyState
           icon={<Inbox size={24} strokeWidth={1.5} />}
-          title="还没有 Template"
-          description="点击右上角“新建草稿”创建你的第一个 Template。"
+          title="还没有模板"
+          description="点击右上角“新建草稿”创建你的第一个模板。"
         />
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {templates.map((template) => (
-            <div
-              key={template.id}
-              className="rounded-[var(--radius-xl)] border border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg-elevated)] p-5"
-            >
-              <Link href={`/admin/templates/${template.id}`} className="group block">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <span
-                      className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-md)] bg-[color:var(--color-bg-hover)] text-[color:var(--color-fg-muted)] group-hover:text-[color:var(--color-accent)]"
-                      aria-hidden="true"
-                    >
-                      <LayoutTemplate size={18} strokeWidth={1.75} />
-                    </span>
-                    <div className="min-w-0">
-                      <h2 className="truncate text-base font-semibold text-[color:var(--color-fg)]">
-                        {template.name}
-                      </h2>
-                      <p className="mt-1 line-clamp-2 text-sm leading-6 text-[color:var(--color-fg-muted)]">
-                        {template.description || "暂无描述。"}
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight
-                    size={16}
-                    strokeWidth={1.75}
-                    className="mt-1 shrink-0 text-[color:var(--color-fg-subtle)] transition group-hover:translate-x-0.5 group-hover:text-[color:var(--color-fg-muted)]"
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <StatusChip kind="template" value={template.status} />
-                  <span className="font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
-                    v{template.version}
-                  </span>
-                </div>
-              </Link>
+        <>
+          <Tabs
+            items={[
+              { key: "drafts", label: "草稿", count: drafts.length },
+              { key: "published", label: "已发布", count: published.length },
+              { key: "archived", label: "归档", count: archived.length },
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
 
-              <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[color:var(--color-border-subtle)] pt-4">
-                {confirmingTemplateId === template.id ? (
-                  <>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      disabled={pendingTemplateId === template.id}
-                      loading={pendingTemplateId === template.id}
-                      onClick={() => void handleArchive(template.id)}
-                    >
-                      {pendingTemplateId === template.id ? "删除中..." : "确认删除"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={pendingTemplateId === template.id}
-                      onClick={() => setConfirmingTemplateId("")}
-                    >
-                      取消
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    leftIcon={<Trash2 size={14} strokeWidth={1.75} />}
-                    disabled={pendingTemplateId === template.id}
-                    onClick={() => setConfirmingTemplateId(template.id)}
-                    className="text-[color:var(--color-danger)] hover:bg-[color:var(--color-danger-soft)] hover:text-[color:var(--color-danger)]"
-                  >
-                    删除 Template
-                  </Button>
-                )}
+          {visible.length === 0 ? (
+            <EmptyState
+              icon={<Inbox size={24} strokeWidth={1.5} />}
+              title="该分类下没有模板"
+              description="切换到其它分类查看。"
+            />
+          ) : (
+            <section className="section-card">
+              <div className="section-card-body no-pad">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>名称</th>
+                      <th>状态</th>
+                      <th>版本</th>
+                      <th>更新</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((template) => (
+                      <tr key={template.id}>
+                        <td>
+                          <Link href={`/admin/templates/${template.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                            <span className="avatar" style={{ width: 28, height: 28, fontSize: 12 }} aria-hidden="true">
+                              {template.name.slice(0, 1)}
+                            </span>
+                            <span>
+                              <span style={{ fontWeight: 500 }}>{template.name}</span>
+                              <span className="meta" style={{ display: "block" }}>
+                                {template.description || "暂无描述"}
+                              </span>
+                            </span>
+                          </Link>
+                        </td>
+                        <td>
+                          <StatusChip kind="template" value={template.status} />
+                        </td>
+                        <td>
+                          <span className="tag tag-mono">v{template.version}</span>
+                        </td>
+                        <td className="meta num-col">{template.updatedAt.slice(0, 10)}</td>
+                        <td className="row-actions">
+                          <Link href={`/admin/templates/${template.id}`}>
+                            <Button variant="secondary" size="sm">
+                              编辑
+                            </Button>
+                          </Link>
+                          {template.status !== "archived" ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              leftIcon={<Trash2 size={14} strokeWidth={1.75} />}
+                              disabled={pendingTemplateId === template.id}
+                              onClick={() => setConfirmingTemplateId(template.id)}
+                              style={{ color: "var(--danger)" }}
+                            >
+                              归档
+                            </Button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          ))}
-        </div>
+            </section>
+          )}
+        </>
       )}
-    </section>
+
+      <Modal
+        open={confirmingTemplateId !== ""}
+        onClose={() => setConfirmingTemplateId("")}
+        title={`归档「${confirmingTemplate?.name ?? ""}」？`}
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmingTemplateId("")}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={pendingTemplateId === confirmingTemplateId}
+              loading={pendingTemplateId === confirmingTemplateId}
+              onClick={() => confirmingTemplateId && void handleArchive(confirmingTemplateId)}
+            >
+              {pendingTemplateId === confirmingTemplateId ? "归档中…" : "确认归档"}
+            </Button>
+          </>
+        }
+      >
+        <p>归档后该模板不再对用户可见，但已基于它创建的 Agent 不受影响。</p>
+      </Modal>
+    </>
   );
 }
