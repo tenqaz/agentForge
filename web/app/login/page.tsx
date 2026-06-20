@@ -9,14 +9,14 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from "react";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Check, Lock, Mail } from "lucide-react";
 
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import { signInWithPassword } from "@/app/login/actions";
 import { apiErrorMessage } from "@/lib/api";
 import Button from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import Input from "@/components/ui/input";
+import AuthSplit from "@/components/ui/auth-split";
 
 export default function LoginPage() {
   return (
@@ -60,11 +60,7 @@ function LoginPageInner() {
     setPending(true);
     setError("");
 
-    const response = await signInWithPassword(
-      apiClient,
-      email.trim(),
-      password,
-    );
+    const response = await signInWithPassword(apiClient, email.trim(), password);
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       setPending(false);
@@ -82,83 +78,139 @@ function LoginPageInner() {
     router.refresh();
   }
 
-  return (
-    <section className="mx-auto max-w-md py-8 sm:py-12">
-      <Card className="p-7 sm:p-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-[color:var(--color-fg)]">
-          登录控制台
-        </h1>
-        <p className="mt-2 text-sm leading-6 text-[color:var(--color-fg-muted)]">
-          使用拥有 Agent 的账户，或负责 Template 发布的管理员账户。
-        </p>
+  const side = (
+    <>
+      <Link href="/" className="brand">
+        <span className="brand-mark">A</span>
+        AgentForge
+      </Link>
+      <div className="auth-pitch">
+        <h2>
+          一份模板，
+          <br />
+          一个活在你微信里的 AI Agent。
+        </h2>
+        <p>从模板出发、几次点击拥有一个独立运行的 Agent；扫一次微信码，它就活在你的对话列表里——不写代码、不开服务器。</p>
+        <ul className="auth-feat-list">
+          <li>
+            <Check size={18} strokeWidth={1.75} />
+            <span>每个 Agent 独立运行时与数据目录</span>
+          </li>
+          <li>
+            <Check size={18} strokeWidth={1.75} />
+            <span>微信扫码全流程托管 · 凭据加密落盘</span>
+          </li>
+          <li>
+            <Check size={18} strokeWidth={1.75} />
+            <span>多用户隔离 · 数据从不互通</span>
+          </li>
+        </ul>
+      </div>
+      <div className="auth-foot">© AgentForge · 2026</div>
+    </>
+  );
 
-        {registered ? (
-          <div
-            role="status"
-            className="mt-5 flex items-start gap-2.5 rounded-[var(--radius-md)] border border-[color:var(--color-success)]/25 bg-[color:var(--color-success-soft)] px-3.5 py-3 text-sm text-[color:var(--color-success)]"
-          >
-            <CheckCircle2 size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>账户已创建，请使用新邮箱和密码登录</span>
-          </div>
-        ) : null}
+  const form = (
+    <>
+      <h1>欢迎回来</h1>
+      <p className="sub">使用邮箱与密码登录你的 AgentForge 账号。</p>
 
-        <form className="mt-6 grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
-            邮箱
+      {registered ? (
+        <div
+          role="status"
+          className="card"
+          style={{
+            marginBottom: 16,
+            padding: "10px 12px",
+            borderColor: "color-mix(in oklch, var(--success) 25%, var(--border))",
+            background: "var(--success-soft)",
+            color: "var(--success)",
+            fontSize: 13,
+            display: "flex",
+            gap: 8,
+            alignItems: "flex-start",
+          }}
+        >
+          <Check size={16} strokeWidth={1.75} style={{ marginTop: 2 }} aria-hidden="true" />
+          <span>账户已创建，请使用新邮箱和密码登录</span>
+        </div>
+      ) : null}
+
+      <form className="form-stack" onSubmit={(event) => void handleSubmit(event)}>
+        <div className="field">
+          <label className="field-label" htmlFor="login-email">邮箱</label>
+          <div className="input-wrap">
+            <span className="input-prefix" aria-hidden="true">
+              <Mail size={16} strokeWidth={1.75} />
+            </span>
             <Input
+              id="login-email"
               name="email"
               type="email"
               autoComplete="email"
-              placeholder="user@example.com"
+              placeholder="you@example.com"
+              className="has-prefix"
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
-            密码
+          </div>
+        </div>
+
+        <div className="field">
+          <label className="field-label" htmlFor="login-password">密码</label>
+          <div className="input-wrap">
+            <span className="input-prefix" aria-hidden="true">
+              <Lock size={16} strokeWidth={1.75} />
+            </span>
             <Input
+              id="login-password"
               name="password"
               type="password"
               autoComplete="current-password"
               placeholder="••••••••"
+              className="has-prefix"
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-          </label>
+          </div>
+        </div>
 
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-[var(--radius-md)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-3.5 py-2.5 text-sm text-[color:var(--color-danger)]"
-            >
-              {error}
-            </div>
-          ) : null}
-
-          <Button
-            type="submit"
-            variant="primary"
-            fullWidth
-            disabled={!hydrated || pending}
-            loading={pending}
-            rightIcon={pending ? undefined : <ArrowRight size={16} strokeWidth={1.75} />}
+        {error ? (
+          <div
+            role="alert"
+            className="card"
+            style={{
+              padding: "10px 12px",
+              borderColor: "color-mix(in oklch, var(--danger) 25%, var(--border))",
+              background: "var(--danger-soft)",
+              color: "var(--danger)",
+              fontSize: 13,
+            }}
           >
-            {pending ? "登录中..." : "登录"}
-          </Button>
-        </form>
+            {error}
+          </div>
+        ) : null}
 
-        <p className="mt-6 text-sm text-[color:var(--color-fg-muted)]">
-          还没有账户？{" "}
-          <Link
-            href="/register"
-            className="font-medium text-[color:var(--color-fg)] underline decoration-[color:var(--color-border-strong)] decoration-1 underline-offset-4 hover:text-[color:var(--color-accent)] hover:decoration-[color:var(--color-accent)]"
-          >
-            创建一个
-          </Link>
-        </p>
-      </Card>
-    </section>
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
+          disabled={!hydrated || pending}
+          loading={pending}
+          rightIcon={pending ? undefined : <ArrowRight size={16} strokeWidth={1.75} />}
+        >
+          {pending ? "登录中…" : "登录"}
+        </Button>
+      </form>
+
+      <p className="switch-line">
+        还没有账号？<Link href="/register">免费注册</Link>
+      </p>
+    </>
   );
+
+  return <AuthSplit side={side} form={form} />;
 }
