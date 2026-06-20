@@ -929,4 +929,20 @@
   /* ---- Progress bar（agent-provision 供应进度）---- */
   .progress-bar { height: 4px; background: var(--border); border-radius: 999px; overflow: hidden; margin-top: 6px; }
   .progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease; }
+
+  /* ---- Conn row（wechat-manage 连接行）---- */
+  .conn-row {
+    display: grid;
+    grid-template-columns: 36px 1.4fr 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .conn-row:last-child { border-bottom: 0; }
+  .conn-row .who-name { font-weight: 500; }
+  @media (max-width: 720px) {
+    .conn-row { grid-template-columns: 36px 1fr auto; }
+    .conn-row > .col-tablet { display: none; }
+  }
 }
