@@ -38,37 +38,34 @@ function copyForStatus(status?: number): { title: string; tone: Tone; detail: st
   }
 }
 
-const styles = {
-  amber: {
-    container:
-      "rounded-[var(--radius-xl)] border border-[color:var(--color-warning)]/25 bg-[color:var(--color-warning-soft)] px-4 py-3.5",
-    title: "text-sm font-semibold text-[color:var(--color-warning)]",
-    detail: "text-sm leading-6 text-[color:var(--color-warning)]/90",
-    message: "text-xs text-[color:var(--color-warning)]/80",
-    Icon: AlertTriangle,
-  },
-  red: {
-    container:
-      "rounded-[var(--radius-xl)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-4 py-3.5",
-    title: "text-sm font-semibold text-[color:var(--color-danger)]",
-    detail: "text-sm leading-6 text-[color:var(--color-danger)]/90",
-    message: "text-xs text-[color:var(--color-danger)]/80",
-    Icon: AlertCircle,
-  },
-} as const;
-
 export default function ApiErrorState({ status, message }: ApiErrorStateProps) {
   const copy = copyForStatus(status);
-  const { container, title, detail, message: messageClass, Icon } = styles[copy.tone];
+  const toneVar = copy.tone === "amber" ? "var(--warning)" : "var(--danger)";
+  const toneSoft = copy.tone === "amber" ? "var(--warning-soft)" : "var(--danger-soft)";
+  const Icon = copy.tone === "amber" ? AlertTriangle : AlertCircle;
 
   return (
-    <div role="alert" className={container}>
-      <div className="flex items-start gap-2.5">
-        <Icon size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <p className={title}>{copy.title}</p>
-          <p className={`mt-1 ${detail}`}>{copy.detail}</p>
-          {message ? <p className={`mt-2 break-words ${messageClass}`}>{message}</p> : null}
+    <div
+      role="alert"
+      className="card"
+      style={{
+        borderColor: `color-mix(in oklch, ${toneVar} 25%, var(--border))`,
+        background: toneSoft,
+        padding: "14px 16px",
+      }}
+    >
+      <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+        <span style={{ color: toneVar, marginTop: 2 }} aria-hidden="true">
+          <Icon size={16} strokeWidth={1.75} />
+        </span>
+        <div className="stack-sm" style={{ gap: 4, minWidth: 0, flex: 1 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: toneVar }}>{copy.title}</p>
+          <p style={{ fontSize: 14, lineHeight: 1.6, color: toneVar }}>{copy.detail}</p>
+          {message ? (
+            <p className="meta" style={{ color: toneVar, wordBreak: "break-word" }}>
+              {message}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
