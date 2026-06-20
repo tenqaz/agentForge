@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("user can create an agent and complete mocked Weixin pairing", async ({
+test("user can create an agent, watch provision, and complete mocked Weixin pairing", async ({
   page,
 }) => {
   let signedIn = false;
@@ -34,14 +34,18 @@ test("user can create an agent and complete mocked Weixin pairing", async ({
     updatedAt: "2026-06-15T00:00:00Z",
   };
 
-  const runtime = () => ({
-    agentId: agent.id,
-    runtimeId: runtimePolls >= 2 ? "agentforge-hermes-agent-1" : "",
-    status: runtimePolls >= 2 ? "running" : "starting",
-    lastErrorCode: "",
-    lastErrorMessage: "",
-    updatedAt: "2026-06-15T00:00:00Z",
-  });
+  // runtime 随轮询推进：creating → provisioning → starting → running
+  const runtime = () => {
+    const status = runtimePolls >= 2 ? "running" : runtimePolls >= 1 ? "starting" : "creating";
+    return {
+      agentId: agent.id,
+      runtimeId: runtimePolls >= 2 ? "agentforge-hermes-agent-1" : "",
+      status,
+      lastErrorCode: "",
+      lastErrorMessage: "",
+      updatedAt: "2026-06-15T00:00:00Z",
+    };
+  };
 
   const session = () => ({
     id: "pairing-1",
@@ -110,9 +114,7 @@ test("user can create an agent and complete mocked Weixin pairing", async ({
       await route.fulfill({
         status: 201,
         contentType: "application/json",
-        body: JSON.stringify({
-          agent: { ...agent, name: "Support Concierge Agent" },
-        }),
+        body: JSON.stringify({ agent }),
       });
       return;
     }
@@ -127,10 +129,12 @@ test("user can create an agent and complete mocked Weixin pairing", async ({
     }
 
     if (pathname === `/api/agents/${agent.id}` && request.method() === "GET") {
+      // agent 状态随 runtime 推进
+      const status = runtimePolls >= 2 ? "running" : runtimePolls >= 1 ? "starting" : "creating";
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ agent }),
+        body: JSON.stringify({ agent: { ...agent, status } }),
       });
       return;
     }
@@ -141,6 +145,31 @@ test("user can create an agent and complete mocked Weixin pairing", async ({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ runtime: runtime() }),
+      });
+      return;
+    }
+
+    if (pathname === `/api/agents/${agent.id}/runtime-jobs` && request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          jobs: [
+            {
+              id: "job-1",
+              agentId: agent.id,
+              type: "provision_agent",
+              status: runtimePolls >= 2 ? "succeeded" : "running",
+              priority: 0,
+              attemptCount: 1,
+              maxAttempts: 3,
+              lastErrorCode: "",
+              lastErrorMessage: "",
+              createdAt: "2026-06-15T00:00:00Z",
+              updatedAt: "2026-06-15T00:00:00Z",
+            },
+          ],
+        }),
       });
       return;
     }
@@ -233,12 +262,19 @@ test("user can create an agent and complete mocked Weixin pairing", async ({
   await page.getByRole("link", { name: /Support Concierge/i }).click();
 
   await page.getByRole("button", { name: "创建 Agent" }).click();
-  await expect(page).toHaveURL(/\/agents\/agent-1$/);
-  await expect(page.getByText("运行中")).toBeVisible();
-  await expect(page.getByRole("button", { name: "生成配对" })).toBeEnabled();
 
-  await page.getByRole("button", { name: "生成配对" }).click();
-  await expect(page.getByAltText("微信配对二维码")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "已连接" })).toBeVisible();
-  await expect(page.getByText("关联账号 wx-bot-1")).toBeVisible();
+  // 创建后跳转 provision 页
+  await expect(page).toHaveURL(/\/agents\/agent-1\/provision$/);
+  await expect(page.getByText(/正在准备/)).toBeVisible();
+
+  // 等待供应完成（runtime 轮询到 running），finish CTA 出现
+  await expect(page.getByRole("button", { name: /现在扫码绑定/ })).toBeVisible({ timeout: 15000 });
+
+  await page.getByRole("button", { name: /现在扫码绑定/ }).click();
+  await expect(page).toHaveURL(/\/agents\/agent-1\/channels\/weixin\/bind$/);
+
+  // QR 显示（QRBox 渲染 svg）
+  await expect(page.locator(".qr-box")).toBeVisible();
+  // pairing 轮询到 connected，finish CTA 出现
+  await expect(page.getByRole("button", { name: /查看 Agent/ })).toBeVisible({ timeout: 15000 });
 });
