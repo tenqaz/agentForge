@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/app-shell";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 const mono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
@@ -30,10 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="zh-CN"
-      className={`${inter.variable} ${mono.variable} h-full antialiased`}
-    >
+    <html lang="zh-CN" className={`${mono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <AppShell>{children}</AppShell>
       </body>
