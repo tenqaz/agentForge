@@ -114,13 +114,18 @@ func (s *FileStore) ImportSkillArchive(template Template, skillName string, cont
 		if len(parts) == 0 || parts[0] == "" {
 			return "", fmt.Errorf("%w: invalid path structure in archive: %q", ErrInvalidInput, file.Name)
 		}
-		if len(parts) < 2 {
-			wrappedRoot = false
-		}
-		if root == "" {
-			root = parts[0]
-		} else if parts[0] != root {
-			wrappedRoot = false
+		// 目录条目（如 "deep-analysis/"）经 filepath.Clean 抹掉末尾斜杠后变成单段路径，
+		// 不能参与根目录判定，否则会误把 wrappedRoot 置为 false、跳过根目录剥离，
+		// 导致 skill 名称被重复一层（skills/<name>/<name>/SKILL.md）。仅文件条目参与判定。
+		if !file.FileInfo().IsDir() {
+			if len(parts) < 2 {
+				wrappedRoot = false
+			}
+			if root == "" {
+				root = parts[0]
+			} else if parts[0] != root {
+				wrappedRoot = false
+			}
 		}
 		entries = append(entries, archiveEntry{path: cleaned, file: file})
 	}
