@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
 
 import ApiErrorState from "@/components/api-error-state";
 import { useApiClient, useSessionState } from "@/components/app-shell";
+import Breadcrumbs from "@/components/ui/breadcrumbs";
 import Button from "@/components/ui/button";
-import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import Input from "@/components/ui/input";
 import StatusChip from "@/components/ui/status-chip";
 import {
@@ -74,65 +74,75 @@ export default function TemplateDetailPage({
       setError(apiErrorMessage(response.error.code, response.error.message));
       return;
     }
-    router.push(`/agents/${response.data.agent.id}`);
+    router.push(`/agents/${response.data.agent.id}/provision`);
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-      <Card>
-        <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
-          Template 详情
-        </p>
-        <CardTitle as="h1" className="mt-2 text-3xl">
-          {template?.name ?? "加载中..."}
-        </CardTitle>
-        <p className="mt-3 text-sm leading-7 text-[color:var(--color-fg-muted)]">
-          {template?.description || "未提供描述。"}
-        </p>
-        {template ? (
-          <div className="mt-5 flex items-center gap-2">
-            <StatusChip kind="template" value={template.status} />
-            <span className="font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
-              v{template.version}
-            </span>
+    <>
+      <Breadcrumbs
+        items={[
+          { label: "模板浏览", href: "/templates" },
+          { label: template?.name ?? "模板" },
+        ]}
+      />
+
+      <div className="grid-2-1">
+        <section className="section-card">
+          <div className="section-card-head">
+            <div>
+              <span className="meta">模板详情</span>
+              <h1 style={{ fontSize: 24, fontWeight: 600, marginTop: 4 }}>
+                {template?.name ?? "加载中…"}
+              </h1>
+            </div>
+            {template ? (
+              <div className="row" style={{ gap: 8 }}>
+                <StatusChip kind="template" value={template.status} />
+                <span className="tag tag-mono">v{template.version}</span>
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </Card>
-
-      <Card>
-        <CardTitle as="h2" className="text-xl">
-          创建 Agent
-        </CardTitle>
-        <CardDescription>
-          基于该 Template 创建一个新的 Agent，后端会自动排队配置运行时。
-        </CardDescription>
-
-        <label className="mt-5 grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
-          Agent 名称
-          <Input
-            value={agentName}
-            onChange={(event) => setAgentName(event.target.value)}
-            placeholder="给 Agent 起个名字"
-          />
-        </label>
-
-        {error ? (
-          <div className="mt-4">
-            <ApiErrorState message={error} status={errorStatus} />
+          <div className="section-card-body">
+            <p className="muted" style={{ fontSize: 14, lineHeight: 1.7 }}>
+              {template?.description || "未提供描述。"}
+            </p>
           </div>
-        ) : null}
+        </section>
 
-        <Button
-          variant="primary"
-          fullWidth
-          className="mt-5"
-          disabled={pending || !template || !agentName.trim()}
-          loading={pending}
-          onClick={() => void handleCreateAgent()}
-        >
-          {pending ? "创建中..." : "创建 Agent"}
-        </Button>
-      </Card>
-    </section>
+        <section className="section-card">
+          <div className="section-card-head">
+            <h3 style={{ fontSize: 15, fontWeight: 600 }}>创建 Agent</h3>
+          </div>
+          <div className="section-card-body">
+            <p className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
+              基于该模板创建一个新的 Agent，后端会自动排队配置运行时。
+            </p>
+            <div className="form-stack">
+              <div className="field">
+                <label className="field-label" htmlFor="agent-name-input">Agent 名称</label>
+                <Input
+                  id="agent-name-input"
+                  value={agentName}
+                  onChange={(event) => setAgentName(event.target.value)}
+                  placeholder="给 Agent 起个名字"
+                />
+              </div>
+
+              {error ? <ApiErrorState message={error} status={errorStatus} /> : null}
+
+              <Button
+                variant="primary"
+                fullWidth
+                disabled={pending || !template || !agentName.trim()}
+                loading={pending}
+                onClick={() => void handleCreateAgent()}
+              >
+                {pending ? "创建中…" : "创建 Agent"}
+              </Button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </>
   );
 }

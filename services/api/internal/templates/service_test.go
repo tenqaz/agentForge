@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -232,6 +233,49 @@ func TestServiceCreateWithContentsRollsBackOnInvalidSkillArchive(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("templates dir entries = %d, want 0", len(entries))
+	}
+}
+
+// TestServiceCreateWithContentsHandlesSkillArchiveWithDirectoryEntries 复现真实
+// zip 工具（zip CLI、Finder、Python shutil.make_archive）生成的归档：它们会写入
+// 显式目录条目（如 "deep-analysis/"）。带目录条目的归档会让 ImportSkillArchive
+// 的"包裹根目录"检测失效，导致 skill 名称被重复一层（skills/<name>/<name>/SKILL.md），
+// 进而让发布校验找不到 skills/<name>/SKILL.md。
+func TestServiceCreateWithContentsHandlesSkillArchiveWithDirectoryEntries(t *testing.T) {
+	service, dataDir := newTestService(t)
+	ctx := context.Background()
+
+	archive := createSkillArchiveWithDirs(t, "deep-analysis", map[string]string{
+		"SKILL.md":             "---\nname: deep-analysis\ndescription: Deep analysis\n---\n# Deep Analysis\n",
+		"assets/avatars/a.svg": "<svg/>",
+	})
+
+	template, err := service.CreateWithContents(ctx, CreateTemplateParams{
+		CreatedBy:   "admin-1",
+		Name:        "Analyst Agent",
+		Description: "deep analysis skill",
+		SoulContent: "# Soul\nAnalytical.",
+		UserContent: "# User\nBe thorough.",
+		SkillArchives: []SkillArchive{
+			{Filename: "deep-analysis.zip", Content: archive},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWithContents returned error: %v", err)
+	}
+
+	skillMD := filepath.Join(dataDir, "templates", template.ID, "versions", "1", "skills", "deep-analysis", "SKILL.md")
+	if _, err := os.Stat(skillMD); err != nil {
+		t.Fatalf("expected SKILL.md at %s, got error: %v", skillMD, err)
+	}
+	// 不应出现重复的目录层
+	duplicated := filepath.Join(dataDir, "templates", template.ID, "versions", "1", "skills", "deep-analysis", "deep-analysis", "SKILL.md")
+	if _, err := os.Stat(duplicated); err == nil {
+		t.Fatalf("duplicated skill directory should not exist: %s", duplicated)
+	}
+	// 发布校验会 stat skills/<name>/SKILL.md，必须通过
+	if _, err := service.Publish(ctx, template.ID); err != nil {
+		t.Fatalf("Publish returned error: %v", err)
 	}
 }
 
@@ -482,6 +526,43 @@ func createSkillArchive(t *testing.T, files map[string]string) []byte {
 		}
 		if _, err := entry.Write([]byte(content)); err != nil {
 			t.Fatalf("Write zip entry %s: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close zip writer: %v", err)
+	}
+	return buffer.Bytes()
+}
+
+// createSkillArchiveWithDirs 构造一个带显式目录条目的归档，模拟真实 zip 工具的输出。
+// root 是包裹所有条目的根目录名（如 "deep-analysis"），files 是相对 root 的文件路径映射。
+func createSkillArchiveWithDirs(t *testing.T, root string, files map[string]string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+
+	dirs := map[string]bool{}
+	for rel := range files {
+		full := root + "/" + rel
+		parts := strings.Split(full, "/")
+		for i := 1; i < len(parts); i++ {
+			dirs[strings.Join(parts[:i], "/")+"/"] = true
+		}
+	}
+	for dir := range dirs {
+		header := &zip.FileHeader{Name: dir, Method: zip.Store}
+		header.SetMode(os.ModeDir | 0o755)
+		if _, err := writer.CreateHeader(header); err != nil {
+			t.Fatalf("Create dir entry %s: %v", dir, err)
+		}
+	}
+	for rel, content := range files {
+		entry, err := writer.Create(root + "/" + rel)
+		if err != nil {
+			t.Fatalf("Create zip entry %s: %v", root+"/"+rel, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write zip entry %s: %v", root+"/"+rel, err)
 		}
 	}
 	if err := writer.Close(); err != nil {

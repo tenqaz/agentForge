@@ -33,19 +33,19 @@ const dictionary: Record<ChipKind, Record<string, Entry>> = {
   },
 };
 
-const dotColor: Record<BadgeTone, string> = {
-  neutral: "bg-[color:var(--color-fg-subtle)]",
-  accent: "bg-[color:var(--color-accent)]",
-  success: "bg-[color:var(--color-success)]",
-  warning: "bg-[color:var(--color-warning)]",
-  danger: "bg-[color:var(--color-danger)]",
-  info: "bg-[color:var(--color-info)]",
+// BadgeTone → .status-dot 状态类映射
+const dotState: Record<BadgeTone, string> = {
+  neutral: "idle",
+  accent: "pending",
+  success: "running",
+  warning: "pending",
+  danger: "error",
+  info: "pending",
 };
 
 export default function StatusChip({
   kind,
   value,
-  size = "sm",
 }: {
   kind: ChipKind;
   value: string;
@@ -53,8 +53,8 @@ export default function StatusChip({
 }) {
   const entry = dictionary[kind][value] ?? { label: value, tone: "neutral" as BadgeTone };
   return (
-    <Badge tone={entry.tone} size={size}>
-      <span className={`size-1.5 rounded-full ${dotColor[entry.tone]}`} aria-hidden="true" />
+    <Badge tone={entry.tone}>
+      <span className={`status-dot ${dotState[entry.tone]}`} aria-hidden="true" />
       {entry.label}
     </Badge>
   );

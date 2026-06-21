@@ -6,7 +6,6 @@ import { Trash2 } from "lucide-react";
 
 import { useApiClient } from "@/components/app-shell";
 import Button from "@/components/ui/button";
-import { Card, CardTitle } from "@/components/ui/card";
 import Input from "@/components/ui/input";
 import StatusChip from "@/components/ui/status-chip";
 import Textarea from "@/components/ui/textarea";
@@ -61,12 +60,7 @@ export default function TemplateEditor({
     setPending("metadata");
     onBusySectionChange("metadata");
     setError("");
-    const response = await updateAdminTemplate(
-      apiClient,
-      template.id,
-      name,
-      description,
-    );
+    const response = await updateAdminTemplate(apiClient, template.id, name, description);
     setPending("");
     onBusySectionChange("");
     if (!response.ok) {
@@ -138,40 +132,33 @@ export default function TemplateEditor({
   const isPublished = template.status === "published";
   const publishLabel = isPublished
     ? pending === "publication"
-      ? "取消发布中..."
+      ? "取消发布中…"
       : "取消发布"
     : pending === "publication"
-      ? "发布中..."
+      ? "发布中…"
       : "发布";
+  const skillsBusy = busySection === "skills";
 
   return (
-    <div className="grid gap-6">
-      {/* Metadata + publication */}
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
-              Template
-            </p>
-            <CardTitle as="h2" className="mt-1.5">
-              元数据与发布
-            </CardTitle>
-            <div className="mt-3 flex items-center gap-2">
-              <StatusChip kind="template" value={template.status} />
-              <span className="font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
-                v{template.version}
-              </span>
+    <div className="stack">
+      {/* 元数据与发布 */}
+      <section className="section-card">
+        <div className="section-card-head">
+          <div className="row" style={{ gap: 12, alignItems: "flex-start" }}>
+            <div>
+              <span className="meta">Template</span>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginTop: 4 }}>元数据与发布</h3>
+              <div className="row" style={{ gap: 8, marginTop: 10 }}>
+                <StatusChip kind="template" value={template.status} />
+                <span className="tag tag-mono">v{template.version}</span>
+              </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <Button
               variant={isPublished ? "secondary" : "primary"}
               size="sm"
-              disabled={
-                pending === "publication" ||
-                pending === "archive" ||
-                busySection === "skills"
-              }
+              disabled={pending === "publication" || pending === "archive" || skillsBusy}
               loading={pending === "publication"}
               onClick={() => void handlePublishToggle()}
             >
@@ -182,16 +169,16 @@ export default function TemplateEditor({
                 <Button
                   variant="danger"
                   size="sm"
-                  disabled={pending === "archive" || busySection === "skills"}
+                  disabled={pending === "archive" || skillsBusy}
                   loading={pending === "archive"}
                   onClick={() => void handleArchive()}
                 >
-                  {pending === "archive" ? "删除中..." : "确认删除"}
+                  {pending === "archive" ? "删除中…" : "确认删除"}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={pending === "archive" || busySection === "skills"}
+                  disabled={pending === "archive" || skillsBusy}
                   onClick={() => setConfirmArchive(false)}
                 >
                   取消
@@ -202,13 +189,9 @@ export default function TemplateEditor({
                 variant="ghost"
                 size="sm"
                 leftIcon={<Trash2 size={14} strokeWidth={1.75} />}
-                disabled={
-                  pending === "publication" ||
-                  pending === "archive" ||
-                  busySection === "skills"
-                }
+                disabled={pending === "publication" || pending === "archive" || skillsBusy}
                 onClick={() => setConfirmArchive(true)}
-                className="text-[color:var(--color-danger)] hover:bg-[color:var(--color-danger-soft)] hover:text-[color:var(--color-danger)]"
+                style={{ color: "var(--danger)" }}
               >
                 删除 Template
               </Button>
@@ -216,86 +199,80 @@ export default function TemplateEditor({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4">
-          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
-            名称
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
-            描述
-            <Textarea
-              rows={3}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </label>
+        <div className="section-card-body">
+          <div className="form-stack">
+            <div className="field">
+              <label className="field-label">名称</label>
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field-label">描述</label>
+              <Textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
+            </div>
+            <div className="form-actions">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={pending === "metadata"}
+                loading={pending === "metadata"}
+                onClick={() => void handleMetadataSave()}
+              >
+                {pending === "metadata" ? "保存中…" : "保存元数据"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SOUL.md */}
+      <section className="section-card">
+        <div className="section-card-head">
+          <h3 style={{ fontSize: 15, fontWeight: 600 }}>SOUL.md · 人格</h3>
           <Button
             variant="primary"
             size="sm"
-            disabled={pending === "metadata"}
-            loading={pending === "metadata"}
-            onClick={() => void handleMetadataSave()}
-            className="w-fit"
+            disabled={pending === "soul"}
+            loading={pending === "soul"}
+            onClick={() => void handleSoulSave()}
           >
-            {pending === "metadata" ? "保存中..." : "保存元数据"}
+            {pending === "soul" ? "保存中…" : "保存 SOUL"}
           </Button>
         </div>
-      </Card>
-
-      {/* SOUL.md */}
-      <Card>
-        <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
-          SOUL.md
-        </p>
-        <Textarea
-          rows={14}
-          mono
-          className="mt-3"
-          value={soul}
-          onChange={(event) => setSoul(event.target.value)}
-          aria-label="SOUL.md"
-        />
-        <Button
-          variant="primary"
-          size="sm"
-          className="mt-4 w-fit"
-          disabled={pending === "soul"}
-          loading={pending === "soul"}
-          onClick={() => void handleSoulSave()}
-        >
-          {pending === "soul" ? "保存中..." : "保存 SOUL"}
-        </Button>
-      </Card>
+        <div className="section-card-body">
+          <Textarea rows={14} mono value={soul} onChange={(event) => setSoul(event.target.value)} aria-label="SOUL.md" />
+        </div>
+      </section>
 
       {/* USER.md */}
-      <Card>
-        <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
-          USER.md
-        </p>
-        <Textarea
-          rows={14}
-          mono
-          className="mt-3"
-          value={userContent}
-          onChange={(event) => setUserContent(event.target.value)}
-          aria-label="USER.md"
-        />
-        <Button
-          variant="primary"
-          size="sm"
-          className="mt-4 w-fit"
-          disabled={pending === "user"}
-          loading={pending === "user"}
-          onClick={() => void handleUserSave()}
-        >
-          {pending === "user" ? "保存中..." : "保存 USER"}
-        </Button>
-      </Card>
+      <section className="section-card">
+        <div className="section-card-head">
+          <h3 style={{ fontSize: 15, fontWeight: 600 }}>USER.md · 用户上下文模板</h3>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={pending === "user"}
+            loading={pending === "user"}
+            onClick={() => void handleUserSave()}
+          >
+            {pending === "user" ? "保存中…" : "保存 USER"}
+          </Button>
+        </div>
+        <div className="section-card-body">
+          <Textarea rows={14} mono value={userContent} onChange={(event) => setUserContent(event.target.value)} aria-label="USER.md" />
+        </div>
+      </section>
 
       {error ? (
         <div
           role="alert"
-          className="rounded-[var(--radius-md)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-3.5 py-2.5 text-sm text-[color:var(--color-danger)]"
+          className="card"
+          style={{
+            padding: "10px 12px",
+            borderColor: "color-mix(in oklch, var(--danger) 25%, var(--border))",
+            background: "var(--danger-soft)",
+            color: "var(--danger)",
+            fontSize: 13,
+          }}
         >
           {error}
         </div>

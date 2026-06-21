@@ -3,14 +3,18 @@
 import { use } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Settings, Trash2 } from "lucide-react";
 
 import ApiErrorState from "@/components/api-error-state";
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import AgentRuntimeStatus from "@/components/agent-runtime-status";
 import WeixinChannelPanel from "@/components/weixin-channel-panel";
+import Breadcrumbs from "@/components/ui/breadcrumbs";
 import Button from "@/components/ui/button";
-import { Card, CardTitle } from "@/components/ui/card";
+import EventLog, { type LogLine } from "@/components/ui/event-log";
+import Modal from "@/components/ui/modal";
+import StatusChip from "@/components/ui/status-chip";
+import Tabs from "@/components/ui/tabs";
 import {
   apiErrorMessage,
   deleteAgent,
@@ -41,6 +45,7 @@ export default function AgentDetailPage({
   const [error, setError] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState("status");
 
   useEffect(() => {
     if (sessionLoading) {
@@ -108,77 +113,139 @@ export default function AgentDetailPage({
     router.push("/agents");
   }
 
-  return (
-    <section className="flex flex-col gap-6">
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wider text-[color:var(--color-fg-subtle)]">
-              Agent 详情
-            </p>
-            <CardTitle as="h1" className="mt-2 text-3xl">
-              {agent?.name ?? "加载中..."}
-            </CardTitle>
-            <p className="mt-2 break-all font-mono text-[11px] text-[color:var(--color-fg-subtle)]">
-              ID {id}
-            </p>
-          </div>
+  // 事件日志：用 agent/runtime 的状态与错误拼出可读日志行
+  const logLines: LogLine[] = [];
+  if (agent) {
+    logLines.push({
+      time: agent.createdAt.slice(11, 19),
+      level: "info",
+      message: `agent_created · id=${id} · template=v${agent.templateVersion}`,
+    });
+  }
+  if (runtime) {
+    logLines.push({
+      time: runtime.updatedAt.slice(11, 19),
+      level: runtime.status === "error" ? "err" : "ok",
+      message: `runtime_status=${runtime.status}${
+        runtime.lastErrorCode ? ` · ${runtime.lastErrorCode}` : ""
+      }`,
+    });
+  }
 
-          {agent ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {confirmingDelete ? (
-                <>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    disabled={deleting}
-                    loading={deleting}
-                    onClick={() => void handleDelete()}
-                  >
-                    {deleting ? "删除中..." : "确认删除"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={deleting}
-                    onClick={() => setConfirmingDelete(false)}
-                  >
-                    取消
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<Trash2 size={14} strokeWidth={1.75} />}
-                  onClick={() => setConfirmingDelete(true)}
-                  className="text-[color:var(--color-danger)] hover:bg-[color:var(--color-danger-soft)] hover:text-[color:var(--color-danger)]"
-                >
-                  删除 Agent
-                </Button>
-              )}
+  return (
+    <>
+      <Breadcrumbs
+        items={[
+          { label: "我的 Agents", href: "/agents" },
+          { label: agent?.name ?? "Agent" },
+        ]}
+      />
+
+      <div className="page-head">
+        <div className="row" style={{ gap: 16, alignItems: "flex-start" }}>
+          <span className="avatar" style={{ width: 48, height: 48, fontSize: 18, borderRadius: 14 }} aria-hidden="true">
+            {(agent?.name ?? "A").slice(0, 1)}
+          </span>
+          <div>
+            <h1>{agent?.name ?? "加载中…"}</h1>
+            <div className="row" style={{ gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+              {agent ? <StatusChip kind="agent" value={agent.status} /> : null}
+              <span className="tag tag-mono">v{agent?.templateVersion ?? "-"}</span>
+              <span className="meta">{id} · 创建于 {agent?.createdAt.slice(0, 10) ?? "—"}</span>
             </div>
-          ) : null}
+          </div>
         </div>
-      </Card>
+        <div className="row" style={{ gap: 8 }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Settings size={14} strokeWidth={1.75} />}
+            onClick={() => router.push(`/agents/${id}/settings`)}
+          >
+            设置
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<Trash2 size={14} strokeWidth={1.75} />}
+            onClick={() => setConfirmingDelete(true)}
+            style={{ color: "var(--danger)" }}
+          >
+            删除 Agent
+          </Button>
+        </div>
+      </div>
 
       {error ? <ApiErrorState message={error} status={errorStatus} /> : null}
 
       {runtime && channel ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <AgentRuntimeStatus
-            agentId={id}
-            runtime={runtime}
-            onRuntimeChange={setRuntime}
+        <>
+          <Tabs
+            items={[
+              { key: "status", label: "状态" },
+              { key: "events", label: "事件日志" },
+              { key: "wx", label: "微信" },
+            ]}
+            value={tab}
+            onChange={setTab}
           />
-          <WeixinChannelPanel
-            agentId={id}
-            initialChannel={channel}
-            initialSession={session}
-            runtimeStatus={runtime.status}
-          />
-        </div>
+
+          {tab === "status" ? (
+            <AgentRuntimeStatus
+              agentId={id}
+              runtime={runtime}
+              onRuntimeChange={setRuntime}
+            />
+          ) : null}
+
+          {tab === "events" ? (
+            <section className="section-card">
+              <div className="section-card-head">
+                <h3>事件流</h3>
+                <span className="meta">来自运行时状态</span>
+              </div>
+              <div className="section-card-body" style={{ padding: 14 }}>
+                <EventLog lines={logLines} />
+              </div>
+            </section>
+          ) : null}
+
+          {tab === "wx" ? (
+            <WeixinChannelPanel
+              agentId={id}
+              initialChannel={channel}
+              initialSession={session}
+              runtimeStatus={runtime.status}
+            />
+          ) : null}
+        </>
       ) : null}
-    </section>
+
+      <Modal
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        title={`删除「${agent?.name ?? ""}」？`}
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={deleting}
+              loading={deleting}
+              onClick={() => void handleDelete()}
+            >
+              {deleting ? "删除中…" : "确认删除"}
+            </Button>
+          </>
+        }
+      >
+        <p>
+          这会立即停止运行时、解除微信绑定、回收数据目录。Agent 的人格、记忆、对话历史都将无法恢复。
+        </p>
+      </Modal>
+    </>
   );
 }

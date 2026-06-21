@@ -58,17 +58,18 @@ export default function MobileDrawer({
       className="fixed inset-0 z-50 lg:hidden"
     >
       <div
-        className="absolute inset-0 bg-black/60"
+        className="absolute inset-0"
+        style={{ background: "color-mix(in oklch, var(--fg) 50%, transparent)" }}
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85%] flex-col border-r border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg-elevated)] shadow-2xl">
+      <div className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85%] flex-col shadow-2xl">
         <button
           ref={closeButtonRef}
           type="button"
           onClick={onClose}
           aria-label="关闭导航"
-          className="absolute right-3 top-3 grid size-8 place-items-center rounded-[var(--radius-md)] text-[color:var(--color-fg-muted)] hover:bg-[color:var(--color-bg-hover)] hover:text-[color:var(--color-fg)]"
+          className="btn btn-icon btn-ghost absolute right-3 top-3 z-10"
         >
           <X size={16} strokeWidth={1.75} />
         </button>

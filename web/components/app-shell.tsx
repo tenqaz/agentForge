@@ -50,7 +50,9 @@ export function useSessionState() {
   return session;
 }
 
-const PUBLIC_PATHS = ["/login", "/register"];
+// 公开路径：营销页、登录、注册、管理员登录 —— 不套 chrome（sidebar/topbar），
+// 由页面自身提供布局（营销页全屏 / auth 页 .auth split）。
+const PUBLIC_PATHS = ["/", "/login", "/register", "/admin/login"];
 
 export default function AppShell({ children, apiBaseUrl }: AppShellProps) {
   const pathname = usePathname();
@@ -107,6 +109,7 @@ export default function AppShell({ children, apiBaseUrl }: AppShellProps) {
   const isPublicPath = PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
+  // 仅登录用户 + 非公开路径才套 chrome；公开页（营销/auth）自行渲染布局。
   const showShell = !!user && !isPublicPath;
 
   return (
@@ -120,50 +123,39 @@ export default function AppShell({ children, apiBaseUrl }: AppShellProps) {
         }}
       >
         {showShell ? (
-          <div className="min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
-            {/* Desktop sidebar — visual only at the chrome layer; pointer-events restored on the inner Sidebar so its interactive children remain clickable while the main content remains hit-test reachable. */}
-            <aside className="pointer-events-none fixed inset-y-0 left-0 z-30 hidden w-[var(--sidebar-width)] border-r border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg-elevated)] lg:block">
-              <div className="pointer-events-auto h-full">
-                <Sidebar
-                  user={user}
-                  loading={loading}
-                  onSignOut={handleSignOut}
-                  pathname={pathname}
-                />
-              </div>
-            </aside>
-
-            {/* Mobile top bar */}
-            <header className="fixed inset-x-0 top-0 z-40 h-[var(--topbar-height)] border-b border-[color:var(--color-border-subtle)] bg-[color:var(--color-bg-elevated)] px-4 lg:hidden">
-              <MobileTopBar
-                onOpenDrawer={() => setDrawerOpen(true)}
-                user={user}
-              />
-            </header>
-
-            {/* Mobile drawer */}
-            <MobileDrawer
-              open={drawerOpen}
-              onClose={() => setDrawerOpen(false)}
+          <div className="app">
+            {/* Desktop sidebar（.app grid 240px 列；.sidebar 自带 sticky/hidden@mobile） */}
+            <Sidebar
               user={user}
               loading={loading}
               onSignOut={handleSignOut}
               pathname={pathname}
             />
 
-            {/* Content (isolate creates a new stacking context so the fixed sidebar never sits on top of interactive content) */}
-            <main className="relative isolate pt-[var(--topbar-height)] lg:pt-0 lg:pl-[var(--sidebar-width)]">
-              <div className="mx-auto w-full max-w-[var(--content-max)] px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
-                {children}
-              </div>
-            </main>
-          </div>
-        ) : (
-          <div className="min-h-screen bg-[color:var(--color-bg)] text-[color:var(--color-fg)]">
-            <div className="mx-auto w-full max-w-[var(--content-max)] px-4 py-10 sm:px-6">
-              {children}
+            <div className="main">
+              {/* Topbar：移动端显示菜单按钮触发 drawer，桌面端由各页 topbar-trail 填充 */}
+              <header className="topbar">
+                <MobileTopBar
+                  onOpenDrawer={() => setDrawerOpen(true)}
+                  user={user}
+                />
+              </header>
+
+              <MobileDrawer
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                user={user}
+                loading={loading}
+                onSignOut={handleSignOut}
+                pathname={pathname}
+              />
+
+              <main className="page">{children}</main>
             </div>
           </div>
+        ) : (
+          // 公开页：不套 chrome，背景由 body 提供，布局由页面自行处理。
+          children
         )}
       </SessionContext.Provider>
     </ApiClientContext.Provider>

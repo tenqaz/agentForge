@@ -8,13 +8,14 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from "react";
+import { ArrowRight, Check, Lock, Mail } from "lucide-react";
 
 import { registerWithPassword } from "@/app/register/actions";
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import { apiErrorMessage } from "@/lib/api";
 import Button from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import Input from "@/components/ui/input";
+import AuthSplit from "@/components/ui/auth-split";
 
 export default function RegisterPage() {
   const apiClient = useApiClient();
@@ -48,11 +49,7 @@ export default function RegisterPage() {
     setPending(true);
     setError("");
 
-    const response = await registerWithPassword(
-      apiClient,
-      email.trim(),
-      password,
-    );
+    const response = await registerWithPassword(apiClient, email.trim(), password);
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
       setPending(false);
@@ -64,72 +61,114 @@ export default function RegisterPage() {
     router.refresh();
   }
 
-  return (
-    <section className="mx-auto max-w-md py-8 sm:py-12">
-      <Card className="p-7 sm:p-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-[color:var(--color-fg)]">
-          创建控制台账户
-        </h1>
-        <p className="mt-2 text-sm leading-6 text-[color:var(--color-fg-muted)]">
-          使用邮箱和密码注册，然后登录管理你的 Agent 与 Template。
-        </p>
+  const side = (
+    <>
+      <Link href="/" className="brand">
+        <span className="brand-mark">A</span>
+        AgentForge
+      </Link>
+      <div className="auth-pitch">
+        <h2>把 Agent 工程化里那些恶心的东西，全部交给平台。</h2>
+        <p>注册一个账号，就能从模板创建你的第一个 Agent。我们处理运行时、二维码、断线重连、凭据加密——你专注 Agent 的人格与能力。</p>
+        <ul className="auth-feat-list">
+          <li>
+            <Check size={18} strokeWidth={1.75} />
+            <span>注册即送一个示范模板</span>
+          </li>
+          <li>
+            <Check size={18} strokeWidth={1.75} />
+            <span>支持并行托管多个 Agent</span>
+          </li>
+          <li>
+            <Check size={18} strokeWidth={1.75} />
+            <span>密钥仅在服务端 · 不出现在前端</span>
+          </li>
+        </ul>
+      </div>
+      <div className="auth-foot">© AgentForge · 2026</div>
+    </>
+  );
 
-        <form className="mt-6 grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
-            邮箱
+  const form = (
+    <>
+      <h1>创建账号</h1>
+      <p className="sub">使用邮箱注册一个 AgentForge 账号。</p>
+
+      <form className="form-stack" onSubmit={(event) => void handleSubmit(event)}>
+        <div className="field">
+          <label className="field-label" htmlFor="register-email">邮箱</label>
+          <div className="input-wrap">
+            <span className="input-prefix" aria-hidden="true">
+              <Mail size={16} strokeWidth={1.75} />
+            </span>
             <Input
+              id="register-email"
               name="email"
               type="email"
               autoComplete="email"
-              placeholder="user@example.com"
+              placeholder="you@example.com"
+              className="has-prefix"
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium text-[color:var(--color-fg-muted)]">
-            密码
+          </div>
+        </div>
+
+        <div className="field">
+          <label className="field-label" htmlFor="register-password">密码</label>
+          <div className="input-wrap">
+            <span className="input-prefix" aria-hidden="true">
+              <Lock size={16} strokeWidth={1.75} />
+            </span>
             <Input
+              id="register-password"
               name="password"
               type="password"
               autoComplete="new-password"
               placeholder="至少 8 位，包含字母与数字"
+              className="has-prefix"
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-          </label>
+          </div>
+        </div>
 
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-[var(--radius-md)] border border-[color:var(--color-danger)]/25 bg-[color:var(--color-danger-soft)] px-3.5 py-2.5 text-sm text-[color:var(--color-danger)]"
-            >
-              {error}
-            </div>
-          ) : null}
-
-          <Button
-            type="submit"
-            variant="primary"
-            fullWidth
-            disabled={!hydrated || pending}
-            loading={pending}
+        {error ? (
+          <div
+            role="alert"
+            className="card"
+            style={{
+              padding: "10px 12px",
+              borderColor: "color-mix(in oklch, var(--danger) 25%, var(--border))",
+              background: "var(--danger-soft)",
+              color: "var(--danger)",
+              fontSize: 13,
+            }}
           >
-            {pending ? "创建中..." : "创建账户"}
-          </Button>
-        </form>
+            {error}
+          </div>
+        ) : null}
 
-        <p className="mt-6 text-sm text-[color:var(--color-fg-muted)]">
-          已有账户？{" "}
-          <Link
-            href="/login"
-            className="font-medium text-[color:var(--color-fg)] underline decoration-[color:var(--color-border-strong)] decoration-1 underline-offset-4 hover:text-[color:var(--color-accent)] hover:decoration-[color:var(--color-accent)]"
-          >
-            返回登录
-          </Link>
-        </p>
-      </Card>
-    </section>
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
+          disabled={!hydrated || pending}
+          loading={pending}
+          rightIcon={pending ? undefined : <ArrowRight size={16} strokeWidth={1.75} />}
+        >
+          {pending ? "创建中…" : "创建账户"}
+        </Button>
+      </form>
+
+      <p className="switch-line">
+        已有账号？<Link href="/login">直接登录</Link>
+      </p>
+    </>
   );
+
+  return <AuthSplit side={side} form={form} />;
 }
