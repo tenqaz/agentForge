@@ -1,24 +1,6 @@
 
-  <!-- ===== topnav ===== -->
-  <header class="topnav" data-od-id="topnav">
-    <div class="container topnav-inner">
-      <span class="logo">
-        <span class="logo-mark">A</span>
-        AgentForge
-      </span>
-      <nav>
-        <a href="#features">功能</a>
-        <a href="#flow">三步流程</a>
-        <a href="#cases">使用场景</a>
-        <a href="#wechat">微信接入</a>
-        <a href="#roadmap">里程碑</a>
-      </nav>
-      <div class="row" style="gap: 8px;">
-        <button class="btn btn-ghost">登录</button>
-        <button class="btn btn-primary">免费创建 Agent</button>
-      </div>
-    </div>
-  </header>
+  <!-- topnav 已抽离为 React 组件 MarketingTopNav（components/marketing-top-nav.tsx），
+       由 app/page.tsx 在此静态片段之前渲染，以便根据登录态切换右上角按钮。 -->
 
   <main id="content">
 
