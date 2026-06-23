@@ -15,6 +15,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxSkillsPerTemplate 限制每个 template 最多可拥有的 skill 数量。
+const MaxSkillsPerTemplate = 20
+
 // AgentChecker defines the interface for checking if a template is in use by agents.
 type AgentChecker interface {
 	HasAgentsForTemplate(ctx context.Context, templateID string) (bool, error)
@@ -95,6 +98,11 @@ func (s *Service) CreateWithContents(ctx context.Context, params CreateTemplateP
 		_ = s.repository.DeleteTemplate(ctx, template.ID)
 		_ = s.store.DeleteTemplate(template)
 		return Template{}, err
+	}
+	if len(params.SkillArchives) > MaxSkillsPerTemplate {
+		_ = s.repository.DeleteTemplate(ctx, template.ID)
+		_ = s.store.DeleteTemplate(template)
+		return Template{}, fmt.Errorf("%w: cannot create template with more than %d skills", ErrInvalidInput, MaxSkillsPerTemplate)
 	}
 	for _, archive := range params.SkillArchives {
 		skillName := strings.TrimSpace(strings.TrimSuffix(archive.Filename, filepath.Ext(archive.Filename)))
@@ -278,6 +286,13 @@ func (s *Service) AddSkill(ctx context.Context, templateID, skillName, skillMD s
 	if err != nil {
 		return Skill{}, err
 	}
+	existing, err := s.repository.ListSkills(ctx, template.ID)
+	if err != nil {
+		return Skill{}, err
+	}
+	if len(existing) >= MaxSkillsPerTemplate {
+		return Skill{}, fmt.Errorf("%w: template already has the maximum of %d skills", ErrInvalidInput, MaxSkillsPerTemplate)
+	}
 	if _, err := s.repository.FindSkillByName(ctx, template.ID, skillName); err == nil {
 		return Skill{}, ErrConflict
 	} else if !errors.Is(err, ErrSkillNotFound) {
@@ -316,6 +331,13 @@ func (s *Service) AddSkillArchive(ctx context.Context, templateID string, archiv
 	template, err := s.editableTemplate(ctx, templateID)
 	if err != nil {
 		return Skill{}, err
+	}
+	existing, err := s.repository.ListSkills(ctx, template.ID)
+	if err != nil {
+		return Skill{}, err
+	}
+	if len(existing) >= MaxSkillsPerTemplate {
+		return Skill{}, fmt.Errorf("%w: template already has the maximum of %d skills", ErrInvalidInput, MaxSkillsPerTemplate)
 	}
 	if _, err := s.repository.FindSkillByName(ctx, template.ID, skillName); err == nil {
 		return Skill{}, ErrConflict

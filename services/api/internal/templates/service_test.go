@@ -236,6 +236,110 @@ func TestServiceCreateWithContentsRollsBackOnInvalidSkillArchive(t *testing.T) {
 	}
 }
 
+func TestServiceAddSkillRejectsBeyondLimit(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+
+	template, err := service.Create(ctx, "admin-1", "Limit Agent", "")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := service.PutSoul(ctx, template.ID, "Soul"); err != nil {
+		t.Fatalf("PutSoul returned error: %v", err)
+	}
+
+	// 填满 10 个 skill
+	for i := range MaxSkillsPerTemplate {
+		name := "skill-" + string(rune('a'+i))
+		if _, err := service.AddSkill(ctx, template.ID, name, "# "+name+"\n"); err != nil {
+			t.Fatalf("AddSkill #%d returned error: %v", i, err)
+		}
+	}
+
+	// 第 11 个应被拒绝
+	_, err = service.AddSkill(ctx, template.ID, "overflow", "# overflow\n")
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("AddSkill beyond limit error = %v, want ErrInvalidInput", err)
+	}
+
+	// 列表仍为 10 个，超限的没被写入
+	skills, err := service.ListSkills(ctx, template.ID)
+	if err != nil {
+		t.Fatalf("ListSkills returned error: %v", err)
+	}
+	if len(skills) != MaxSkillsPerTemplate {
+		t.Fatalf("skills count = %d, want %d", len(skills), MaxSkillsPerTemplate)
+	}
+}
+
+func TestServiceAddSkillArchiveRejectsBeyondLimit(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+
+	template, err := service.Create(ctx, "admin-1", "Limit Agent", "")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := service.PutSoul(ctx, template.ID, "Soul"); err != nil {
+		t.Fatalf("PutSoul returned error: %v", err)
+	}
+	for i := range MaxSkillsPerTemplate {
+		name := "skill-" + string(rune('a'+i))
+		if _, err := service.AddSkill(ctx, template.ID, name, "# "+name+"\n"); err != nil {
+			t.Fatalf("AddSkill #%d returned error: %v", i, err)
+		}
+	}
+
+	archive := createSkillArchive(t, map[string]string{
+		"SKILL.md": "---\nname: overflow\ndescription: Eleventh skill\n---\n# Overflow\n",
+	})
+	_, err = service.AddSkillArchive(ctx, template.ID, archive)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("AddSkillArchive beyond limit error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestServiceCreateWithContentsRejectsTooManySkillArchives(t *testing.T) {
+	service, dataDir := newTestService(t)
+	ctx := context.Background()
+
+	archives := make([]SkillArchive, 0, MaxSkillsPerTemplate+1)
+	for i := range MaxSkillsPerTemplate + 1 {
+		name := "skill" + string(rune('a'+i))
+		archives = append(archives, SkillArchive{
+			Filename: name + ".zip",
+			Content: createSkillArchive(t, map[string]string{
+				"SKILL.md": "---\nname: " + name + "\ndescription: test\n---\n# " + name + "\n",
+			}),
+		})
+	}
+
+	_, err := service.CreateWithContents(ctx, CreateTemplateParams{
+		CreatedBy:     "admin-1",
+		Name:          "TooMany",
+		Description:   "too many",
+		SoulContent:   "# Soul\n",
+		UserContent:   "# User\n",
+		SkillArchives: archives,
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("CreateWithContents error = %v, want ErrInvalidInput", err)
+	}
+
+	// 回滚后模板目录应为空
+	templatesDir := filepath.Join(dataDir, "templates")
+	entries, readErr := os.ReadDir(templatesDir)
+	if errors.Is(readErr, os.ErrNotExist) {
+		return
+	}
+	if readErr != nil {
+		t.Fatalf("ReadDir returned error: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("templates dir entries = %d, want 0 after rollback", len(entries))
+	}
+}
+
 // TestServiceCreateWithContentsHandlesSkillArchiveWithDirectoryEntries 复现真实
 // zip 工具（zip CLI、Finder、Python shutil.make_archive）生成的归档：它们会写入
 // 显式目录条目（如 "deep-analysis/"）。带目录条目的归档会让 ImportSkillArchive

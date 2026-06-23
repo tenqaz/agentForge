@@ -1,6 +1,12 @@
 export type ApiPrimitive = string | number | boolean | null;
 export type ApiJson = ApiPrimitive | ApiJson[] | { [key: string]: ApiJson };
 
+/**
+ * 每个 template 最多可拥有的 skill 数量。
+ * 必须与后端 templates.MaxSkillsPerTemplate 保持一致。
+ */
+export const MAX_SKILLS_PER_TEMPLATE = 20;
+
 export type ApiMethod =
   | "DELETE"
   | "GET"

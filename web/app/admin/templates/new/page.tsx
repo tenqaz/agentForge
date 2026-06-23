@@ -10,7 +10,7 @@ import Breadcrumbs from "@/components/ui/breadcrumbs";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Textarea from "@/components/ui/textarea";
-import { apiErrorMessage, createAdminTemplate } from "@/lib/api";
+import { MAX_SKILLS_PER_TEMPLATE, apiErrorMessage, createAdminTemplate } from "@/lib/api";
 
 export default function NewAdminTemplatePage() {
   const apiClient = useApiClient();
@@ -39,6 +39,11 @@ export default function NewAdminTemplatePage() {
   }, [sessionLoading, router, user]);
 
   async function handleCreate() {
+    if (skillZips.length > MAX_SKILLS_PER_TEMPLATE) {
+      setErrorStatus(undefined);
+      setError(`每个模板最多 ${MAX_SKILLS_PER_TEMPLATE} 个技能，当前选择了 ${skillZips.length} 个。`);
+      return;
+    }
     setPending(true);
     setError("");
     const formData = new FormData();
@@ -72,7 +77,7 @@ export default function NewAdminTemplatePage() {
         <div>
           <span className="meta">新建草稿</span>
           <h1>创建一个新的模板草稿</h1>
-          <p className="lead">填写元数据与初始 SOUL/USER 文件，可选择上传初始 Skill ZIP。</p>
+          <p className="lead">填写元数据与初始 SOUL/USER 文件，可选择上传初始 Skill ZIP（最多 {MAX_SKILLS_PER_TEMPLATE} 个）。</p>
         </div>
       </div>
 
@@ -121,13 +126,24 @@ export default function NewAdminTemplatePage() {
               />
             </div>
             <div className="field">
-              <label className="field-label" htmlFor="tpl-skills">Skill ZIP</label>
+              <label className="field-label" htmlFor="tpl-skills">Skill ZIP（最多 {MAX_SKILLS_PER_TEMPLATE} 个）</label>
               <input
                 id="tpl-skills"
                 type="file"
                 accept=".zip,application/zip"
                 multiple
-                onChange={(event) => setSkillZips(Array.from(event.target.files ?? []))}
+                onChange={(event) => {
+                  const picked = Array.from(event.target.files ?? []);
+                  if (picked.length > MAX_SKILLS_PER_TEMPLATE) {
+                    setErrorStatus(undefined);
+                    setError(`最多只能上传 ${MAX_SKILLS_PER_TEMPLATE} 个技能，已选 ${picked.length} 个。`);
+                    setSkillZips([]);
+                    event.target.value = "";
+                    return;
+                  }
+                  setError("");
+                  setSkillZips(picked);
+                }}
                 className="input"
                 style={{ padding: "8px 12px" }}
               />
