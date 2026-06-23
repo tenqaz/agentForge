@@ -40,6 +40,7 @@ func TestWriteAgentEnvConnectedWritesConnectionValues(t *testing.T) {
 		"WEIXIN_DM_POLICY=allowlist\n" +
 		"WEIXIN_GROUP_POLICY=disabled\n" +
 		"WEIXIN_ALLOWED_USERS=user-1\n" +
+		"WEIXIN_HOME_CHANNEL=user-1\n" +
 		"WEIXIN_GROUP_ALLOWED_USERS=\n"
 	if string(data) != want {
 		t.Fatalf(".env = %q, want %q", string(data), want)
