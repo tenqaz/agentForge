@@ -1,35 +1,31 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import "./marketing.css";
 import MarketingTopNav from "@/components/marketing-top-nav";
+import HeroSection from "@/components/marketing/hero-section";
+import StepsSection from "@/components/marketing/steps-section";
+import FeaturesSection from "@/components/marketing/features-section";
+import UsecaseSection from "@/components/marketing/usecase-section";
+import WechatDemo from "@/components/marketing/wechat-demo";
+import RoadmapSection from "@/components/marketing/roadmap-section";
+import CtaSection from "@/components/marketing/cta-section";
+import MarketingFooter from "@/components/marketing/marketing-footer";
 
-// 营销着陆页：还原参考 marketing.html 的视觉。
-// - 顶部导航（含「登录/免费创建 Agent」按钮）由 MarketingTopNav 客户端组件提供，
-//   按当前会话切换为「进入控制台/退出」。
-// - 余下章节仍由静态 HTML 渲染；hero/footer 的 CTA <button> 在此替换为带路由的 <a>，
-//   保留原 class 与文案。
-async function getMarketingBody(): Promise<string> {
-  const filePath = join(process.cwd(), "app", "marketing-body.html");
-  let html = await readFile(filePath, "utf8");
-
-  html = html.replace(
-    /<button([^>]*class="([^"]*btn[^"]*)")>\s*免费创建 Agent\s*<\/button>/g,
-    '<a$1 href="/register">免费创建 Agent</a>',
-  );
-  html = html.replace(
-    /<button([^>]*class="([^"]*btn[^"]*)")>\s*浏览公开模板\s*<\/button>/g,
-    '<a$1 href="/templates">浏览公开模板</a>',
-  );
-
-  return html;
-}
-
-export default async function MarketingPage() {
-  const html = await getMarketingBody();
+// 营销着陆页：整页由 React 组件树渲染，样式仍统一来自 marketing.css。
+// 顶部导航 MarketingTopNav 是客户端组件，根据登录态切换右上角按钮；
+// WechatDemo 同样是客户端组件，承载阶段切换交互；其余段保持服务端渲染。
+export default function MarketingPage() {
   return (
     <>
       <MarketingTopNav />
-      <div dangerouslySetInnerHTML={{ __html: html }} />
+      <main id="content">
+        <HeroSection />
+        <StepsSection />
+        <FeaturesSection />
+        <UsecaseSection />
+        <WechatDemo />
+        <RoadmapSection />
+        <CtaSection />
+      </main>
+      <MarketingFooter />
     </>
   );
 }
