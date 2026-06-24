@@ -131,11 +131,11 @@ func insertSpecFixture(t *testing.T, ctx context.Context, database *sql.DB) {
 		 VALUES ('user_1', 'user@example.test', 'hash', 'user');`,
 		`INSERT INTO agent_templates (
 			id, name, description, status, version, template_path, content_checksum,
-			soul_md_path, user_md_path, skills_path, created_by
+			soul_md_path, user_md_path, soul_content, user_content, skills_path, created_by
 		 )
 		 VALUES (
 			'template_1', 'Template', 'Description', 'published', 1, '/tmp/templates/template_1',
-			'checksum', '/tmp/templates/template_1/SOUL.md', '/tmp/templates/template_1/USER.md',
+			'checksum', '/tmp/templates/template_1/SOUL.md', '/tmp/templates/template_1/USER.md', '', '',
 			'/tmp/templates/template_1/skills', 'user_1'
 		 );`,
 		`INSERT INTO agents (id, owner_user_id, template_id, template_version, name, status, hermes_home_path)

@@ -19,11 +19,12 @@ func (r *Repository) CreateTemplate(ctx context.Context, template Template) (Tem
 	_, err := r.database.ExecContext(ctx, `
 		INSERT INTO agent_templates (
 			id, name, description, status, version, template_path, content_checksum,
-			soul_md_path, user_md_path, skills_path, created_by
+			soul_md_path, user_md_path, soul_content, user_content, skills_path, created_by
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`, template.ID, template.Name, template.Description, template.Status, template.Version, template.TemplatePath,
-		template.ContentChecksum, template.SoulMDPath, template.UserMDPath, template.SkillsPath, template.CreatedBy)
+		template.ContentChecksum, template.SoulMDPath, template.UserMDPath, template.SoulContent, template.UserContent,
+		template.SkillsPath, template.CreatedBy)
 	if err != nil {
 		return Template{}, err
 	}
@@ -46,13 +47,15 @@ func (r *Repository) GetTemplate(ctx context.Context, id string) (Template, erro
 	var publishedAt sql.NullString
 	err := r.database.QueryRowContext(ctx, `
 		SELECT id, name, description, status, version, template_path, content_checksum,
-		       soul_md_path, user_md_path, skills_path, created_by, created_at, updated_at, published_at
+		       soul_md_path, user_md_path, soul_content, user_content, skills_path,
+		       created_by, created_at, updated_at, published_at
 		FROM agent_templates
 		WHERE id = ?;
 	`, id).Scan(
 		&template.ID, &template.Name, &template.Description, &template.Status, &template.Version,
 		&template.TemplatePath, &template.ContentChecksum, &template.SoulMDPath, &template.UserMDPath,
-		&template.SkillsPath, &template.CreatedBy, &template.CreatedAt, &template.UpdatedAt, &publishedAt,
+		&template.SoulContent, &template.UserContent, &template.SkillsPath, &template.CreatedBy,
+		&template.CreatedAt, &template.UpdatedAt, &publishedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Template{}, ErrNotFound
@@ -69,7 +72,8 @@ func (r *Repository) GetTemplate(ctx context.Context, id string) (Template, erro
 func (r *Repository) ListTemplates(ctx context.Context, statuses ...Status) ([]Template, error) {
 	query := `
 		SELECT id, name, description, status, version, template_path, content_checksum,
-		       soul_md_path, user_md_path, skills_path, created_by, created_at, updated_at, published_at
+		       soul_md_path, user_md_path, soul_content, user_content, skills_path,
+		       created_by, created_at, updated_at, published_at
 		FROM agent_templates`
 	var args []any
 	if len(statuses) > 0 {
@@ -95,7 +99,8 @@ func (r *Repository) ListTemplates(ctx context.Context, statuses ...Status) ([]T
 		if err := rows.Scan(
 			&template.ID, &template.Name, &template.Description, &template.Status, &template.Version,
 			&template.TemplatePath, &template.ContentChecksum, &template.SoulMDPath, &template.UserMDPath,
-			&template.SkillsPath, &template.CreatedBy, &template.CreatedAt, &template.UpdatedAt, &publishedAt,
+			&template.SoulContent, &template.UserContent, &template.SkillsPath, &template.CreatedBy,
+			&template.CreatedAt, &template.UpdatedAt, &publishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -128,6 +133,36 @@ func (r *Repository) UpdateTemplateChecksum(ctx context.Context, id, checksum st
 		SET content_checksum = ?, updated_at = datetime('now')
 		WHERE id = ?;
 	`, checksum, id)
+	if err != nil {
+		return Template{}, err
+	}
+	if err := requireAffected(result); err != nil {
+		return Template{}, err
+	}
+	return r.GetTemplate(ctx, id)
+}
+
+func (r *Repository) UpdateSoulContent(ctx context.Context, id, content string) (Template, error) {
+	result, err := r.database.ExecContext(ctx, `
+		UPDATE agent_templates
+		SET soul_content = ?, updated_at = datetime('now')
+		WHERE id = ?;
+	`, content, id)
+	if err != nil {
+		return Template{}, err
+	}
+	if err := requireAffected(result); err != nil {
+		return Template{}, err
+	}
+	return r.GetTemplate(ctx, id)
+}
+
+func (r *Repository) UpdateUserContent(ctx context.Context, id, content string) (Template, error) {
+	result, err := r.database.ExecContext(ctx, `
+		UPDATE agent_templates
+		SET user_content = ?, updated_at = datetime('now')
+		WHERE id = ?;
+	`, content, id)
 	if err != nil {
 		return Template{}, err
 	}

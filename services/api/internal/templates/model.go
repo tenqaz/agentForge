@@ -29,6 +29,8 @@ type Template struct {
 	ContentChecksum string  `json:"contentChecksum"`
 	SoulMDPath      string  `json:"soulMDPath"`
 	UserMDPath      string  `json:"userMDPath"`
+	SoulContent     string  `json:"-"`
+	UserContent     string  `json:"-"`
 	SkillsPath      string  `json:"skillsPath"`
 	CreatedBy       string  `json:"createdBy"`
 	CreatedAt       string  `json:"createdAt"`
