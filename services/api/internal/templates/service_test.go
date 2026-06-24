@@ -50,7 +50,7 @@ func TestServicePublishesOnlyCompleteTemplates(t *testing.T) {
 }
 
 func TestServiceCreatesDraftWhenEditingPublishedTemplate(t *testing.T) {
-	service, dataDir := newTestService(t)
+	service, _ := newTestService(t)
 	ctx := context.Background()
 	published := createPublishableTemplate(t, service)
 
@@ -65,12 +65,12 @@ func TestServiceCreatesDraftWhenEditingPublishedTemplate(t *testing.T) {
 		t.Fatalf("next draft = %#v, published = %#v", next, published)
 	}
 
-	originalSoul, err := os.ReadFile(filepath.Join(dataDir, "templates", published.ID, "versions", "1", "SOUL.md"))
+	originalSoul, err := service.Soul(ctx, published.ID)
 	if err != nil {
-		t.Fatalf("read original SOUL.md: %v", err)
+		t.Fatalf("Soul published returned error: %v", err)
 	}
-	if string(originalSoul) != "Original soul." {
-		t.Fatalf("original SOUL.md = %q, want immutable original", originalSoul)
+	if originalSoul != "Original soul." {
+		t.Fatalf("original soul = %q, want immutable original", originalSoul)
 	}
 	nextSoul, err := service.Soul(ctx, next.ID)
 	if err != nil {
@@ -495,8 +495,6 @@ func TestRepositoryCreateSkillMapsUniqueConstraintToConflict(t *testing.T) {
 		Version:         1,
 		TemplatePath:    "/tmp/template-1",
 		ContentChecksum: checksumString(""),
-		SoulMDPath:      "/tmp/template-1/SOUL.md",
-		UserMDPath:      "/tmp/template-1/USER.md",
 		SkillsPath:      "/tmp/template-1/skills",
 		CreatedBy:       "admin-1",
 	}
@@ -594,8 +592,8 @@ func newTemplatesTestDB(t *testing.T) *sql.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			template_path TEXT NOT NULL,
 			content_checksum TEXT NOT NULL,
-			soul_md_path TEXT NOT NULL,
-			user_md_path TEXT NOT NULL,
+			soul_content TEXT NOT NULL DEFAULT '',
+			user_content TEXT NOT NULL DEFAULT '',
 			skills_path TEXT NOT NULL,
 			created_by TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),

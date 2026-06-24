@@ -306,8 +306,8 @@ func newChannelWorkerTestDB(t *testing.T) *sql.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			template_path TEXT NOT NULL,
 			content_checksum TEXT NOT NULL,
-			soul_md_path TEXT NOT NULL,
-			user_md_path TEXT NOT NULL,
+			soul_content TEXT NOT NULL DEFAULT '',
+			user_content TEXT NOT NULL DEFAULT '',
 			skills_path TEXT NOT NULL,
 			created_by TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -390,11 +390,10 @@ func newChannelWorkerTestDB(t *testing.T) *sql.DB {
 		VALUES ('user-1', 'user@example.com', 'unused', 'user');
 		INSERT INTO agent_templates (
 			id, name, description, status, version, template_path, content_checksum,
-			soul_md_path, user_md_path, skills_path, created_by
+			soul_content, user_content, skills_path, created_by
 		) VALUES (
 			'template-1', 'Support', 'Published template', 'published', 1,
-			'/tmp/template-1', 'checksum', '/tmp/template-1/SOUL.md',
-			'/tmp/template-1/USER.md', '/tmp/template-1/skills', 'user-1'
+			'/tmp/template-1', 'checksum', '', '', '/tmp/template-1/skills', 'user-1'
 		);
 	`)
 	if err != nil {
