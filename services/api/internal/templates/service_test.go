@@ -50,7 +50,7 @@ func TestServicePublishesOnlyCompleteTemplates(t *testing.T) {
 }
 
 func TestServiceCreatesDraftWhenEditingPublishedTemplate(t *testing.T) {
-	service, dataDir := newTestService(t)
+	service, _ := newTestService(t)
 	ctx := context.Background()
 	published := createPublishableTemplate(t, service)
 
@@ -65,12 +65,12 @@ func TestServiceCreatesDraftWhenEditingPublishedTemplate(t *testing.T) {
 		t.Fatalf("next draft = %#v, published = %#v", next, published)
 	}
 
-	originalSoul, err := os.ReadFile(filepath.Join(dataDir, "templates", published.ID, "versions", "1", "SOUL.md"))
+	originalSoul, err := service.Soul(ctx, published.ID)
 	if err != nil {
-		t.Fatalf("read original SOUL.md: %v", err)
+		t.Fatalf("Soul published returned error: %v", err)
 	}
-	if string(originalSoul) != "Original soul." {
-		t.Fatalf("original SOUL.md = %q, want immutable original", originalSoul)
+	if originalSoul != "Original soul." {
+		t.Fatalf("original soul = %q, want immutable original", originalSoul)
 	}
 	nextSoul, err := service.Soul(ctx, next.ID)
 	if err != nil {

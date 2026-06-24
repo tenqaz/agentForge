@@ -148,10 +148,12 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 		return w.failProvision(ctx, job, agent, runtime.ErrCodeCopyTemplateFailed, "failed to copy template files")
 	}
 	if _, err := w.homeBuilder.Provision(ctx, runtime.HomeSpec{
-		AgentID:  agent.ID,
-		HomePath: agent.HermesHomePath,
-		Template: template,
-		Provider: w.provider,
+		AgentID:     agent.ID,
+		HomePath:    agent.HermesHomePath,
+		Template:    template,
+		SoulContent: template.SoulContent,
+		UserContent: template.UserContent,
+		Provider:    w.provider,
 	}); err != nil {
 		code := runtime.ErrCodeCopyTemplateFailed
 		message := "failed to copy template files"

@@ -176,8 +176,6 @@ func TestRuntimeWorkerProvisionAgentRecordsCopyTemplateFailureAndPreservesSessio
 		ID:           "template-1",
 		Version:      3,
 		TemplatePath: filepath.Join(homeRoot, "templates", "template-1", "versions", "3"),
-		SoulMDPath:   filepath.Join(homeRoot, "templates", "template-1", "versions", "3", "SOUL.md"),
-		UserMDPath:   filepath.Join(homeRoot, "templates", "template-1", "versions", "3", "USER.md"),
 		SkillsPath:   filepath.Join(homeRoot, "templates", "template-1", "versions", "3", "skills"),
 	}
 	agentID := insertRuntimeWorkerAgent(t, database, homeRoot, agents.StatusCreating)
@@ -406,18 +404,12 @@ func seedWorkerTemplateFiles(t *testing.T, root string) templates.Template {
 		ID:           "template-1",
 		Version:      3,
 		TemplatePath: templateRoot,
-		SoulMDPath:   filepath.Join(templateRoot, "SOUL.md"),
-		UserMDPath:   filepath.Join(templateRoot, "USER.md"),
 		SkillsPath:   filepath.Join(templateRoot, "skills"),
+		SoulContent:  "Soul contents",
+		UserContent:  "User memory",
 	}
 	if err := os.MkdirAll(filepath.Join(template.SkillsPath, "faq"), 0o755); err != nil {
 		t.Fatalf("mkdir skill dir: %v", err)
-	}
-	if err := os.WriteFile(template.SoulMDPath, []byte("Soul contents"), 0o644); err != nil {
-		t.Fatalf("write SOUL.md: %v", err)
-	}
-	if err := os.WriteFile(template.UserMDPath, []byte("User memory"), 0o644); err != nil {
-		t.Fatalf("write USER.md: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(template.SkillsPath, "faq", "SKILL.md"), []byte("# FAQ"), 0o644); err != nil {
 		t.Fatalf("write SKILL.md: %v", err)
