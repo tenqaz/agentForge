@@ -444,8 +444,6 @@ func newRuntimeWorkerTestDB(t *testing.T) *sql.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			template_path TEXT NOT NULL,
 			content_checksum TEXT NOT NULL,
-			soul_md_path TEXT NOT NULL DEFAULT '',
-			user_md_path TEXT NOT NULL DEFAULT '',
 			soul_content TEXT NOT NULL DEFAULT '',
 			user_content TEXT NOT NULL DEFAULT '',
 			skills_path TEXT NOT NULL,
@@ -508,11 +506,10 @@ func newRuntimeWorkerTestDB(t *testing.T) *sql.DB {
 		       ('admin-1', 'admin@example.com', 'unused', 'admin');
 		INSERT INTO agent_templates (
 			id, name, description, status, version, template_path, content_checksum,
-			soul_md_path, user_md_path, soul_content, user_content, skills_path, created_by
+			soul_content, user_content, skills_path, created_by
 		) VALUES (
 			'template-1', 'Support', 'Published template', 'published', 3,
-			'/tmp/template-1', 'checksum', '/tmp/template-1/SOUL.md',
-			'/tmp/template-1/USER.md', '', '', '/tmp/template-1/skills', 'admin-1'
+			'/tmp/template-1', 'checksum', '', '', '/tmp/template-1/skills', 'admin-1'
 		);
 	`)
 	if err != nil {

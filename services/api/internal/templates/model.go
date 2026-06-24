@@ -27,8 +27,6 @@ type Template struct {
 	Version         int     `json:"version"`
 	TemplatePath    string  `json:"templatePath"`
 	ContentChecksum string  `json:"contentChecksum"`
-	SoulMDPath      string  `json:"soulMDPath"`
-	UserMDPath      string  `json:"userMDPath"`
 	SoulContent     string  `json:"-"`
 	UserContent     string  `json:"-"`
 	SkillsPath      string  `json:"skillsPath"`

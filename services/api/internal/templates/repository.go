@@ -19,11 +19,11 @@ func (r *Repository) CreateTemplate(ctx context.Context, template Template) (Tem
 	_, err := r.database.ExecContext(ctx, `
 		INSERT INTO agent_templates (
 			id, name, description, status, version, template_path, content_checksum,
-			soul_md_path, user_md_path, soul_content, user_content, skills_path, created_by
+			soul_content, user_content, skills_path, created_by
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`, template.ID, template.Name, template.Description, template.Status, template.Version, template.TemplatePath,
-		template.ContentChecksum, template.SoulMDPath, template.UserMDPath, template.SoulContent, template.UserContent,
+		template.ContentChecksum, template.SoulContent, template.UserContent,
 		template.SkillsPath, template.CreatedBy)
 	if err != nil {
 		return Template{}, err
@@ -47,13 +47,13 @@ func (r *Repository) GetTemplate(ctx context.Context, id string) (Template, erro
 	var publishedAt sql.NullString
 	err := r.database.QueryRowContext(ctx, `
 		SELECT id, name, description, status, version, template_path, content_checksum,
-		       soul_md_path, user_md_path, soul_content, user_content, skills_path,
+		       soul_content, user_content, skills_path,
 		       created_by, created_at, updated_at, published_at
 		FROM agent_templates
 		WHERE id = ?;
 	`, id).Scan(
 		&template.ID, &template.Name, &template.Description, &template.Status, &template.Version,
-		&template.TemplatePath, &template.ContentChecksum, &template.SoulMDPath, &template.UserMDPath,
+		&template.TemplatePath, &template.ContentChecksum,
 		&template.SoulContent, &template.UserContent, &template.SkillsPath, &template.CreatedBy,
 		&template.CreatedAt, &template.UpdatedAt, &publishedAt,
 	)
@@ -72,7 +72,7 @@ func (r *Repository) GetTemplate(ctx context.Context, id string) (Template, erro
 func (r *Repository) ListTemplates(ctx context.Context, statuses ...Status) ([]Template, error) {
 	query := `
 		SELECT id, name, description, status, version, template_path, content_checksum,
-		       soul_md_path, user_md_path, soul_content, user_content, skills_path,
+		       soul_content, user_content, skills_path,
 		       created_by, created_at, updated_at, published_at
 		FROM agent_templates`
 	var args []any
@@ -98,7 +98,7 @@ func (r *Repository) ListTemplates(ctx context.Context, statuses ...Status) ([]T
 		var publishedAt sql.NullString
 		if err := rows.Scan(
 			&template.ID, &template.Name, &template.Description, &template.Status, &template.Version,
-			&template.TemplatePath, &template.ContentChecksum, &template.SoulMDPath, &template.UserMDPath,
+			&template.TemplatePath, &template.ContentChecksum,
 			&template.SoulContent, &template.UserContent, &template.SkillsPath, &template.CreatedBy,
 			&template.CreatedAt, &template.UpdatedAt, &publishedAt,
 		); err != nil {

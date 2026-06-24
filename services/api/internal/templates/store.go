@@ -23,8 +23,6 @@ type FileStore struct {
 
 type TemplatePaths struct {
 	TemplatePath string
-	SoulMDPath   string
-	UserMDPath   string
 	SkillsPath   string
 }
 
@@ -36,8 +34,6 @@ func (s *FileStore) Paths(templateID string, version int) TemplatePaths {
 	versionDir := filepath.Join(s.dataDir, "templates", templateID, "versions", strconv.Itoa(version))
 	return TemplatePaths{
 		TemplatePath: versionDir,
-		SoulMDPath:   filepath.Join(versionDir, "SOUL.md"),
-		UserMDPath:   filepath.Join(versionDir, "USER.md"),
 		SkillsPath:   filepath.Join(versionDir, "skills"),
 	}
 }
@@ -59,22 +55,6 @@ func (s *FileStore) CopyTemplateVersion(source Template, targetID string, target
 		return TemplatePaths{}, err
 	}
 	return targetPaths, nil
-}
-
-func (s *FileStore) WriteSoul(template Template, content string) error {
-	return writeFile(template.SoulMDPath, content)
-}
-
-func (s *FileStore) ReadSoul(template Template) (string, error) {
-	return readFile(template.SoulMDPath)
-}
-
-func (s *FileStore) WriteUser(template Template, content string) error {
-	return writeFile(template.UserMDPath, content)
-}
-
-func (s *FileStore) ReadUser(template Template) (string, error) {
-	return readFile(template.UserMDPath)
 }
 
 func (s *FileStore) WriteSkill(template Template, skillName, content string) (string, error) {

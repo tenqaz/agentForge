@@ -548,8 +548,6 @@ func newTemplateHTTPTestDB(t *testing.T) *sql.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			template_path TEXT NOT NULL,
 			content_checksum TEXT NOT NULL,
-			soul_md_path TEXT NOT NULL DEFAULT '',
-			user_md_path TEXT NOT NULL DEFAULT '',
 			soul_content TEXT NOT NULL DEFAULT '',
 			user_content TEXT NOT NULL DEFAULT '',
 			skills_path TEXT NOT NULL,

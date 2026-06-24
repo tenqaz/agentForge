@@ -299,8 +299,6 @@ func (w *RuntimeWorker) loadTemplate(ctx context.Context, agent runtimeAgentReco
 		ID:           agent.TemplateID,
 		Version:      agent.TemplateVersion,
 		TemplatePath: paths.TemplatePath,
-		SoulMDPath:   paths.SoulMDPath,
-		UserMDPath:   paths.UserMDPath,
 		SkillsPath:   paths.SkillsPath,
 	}, nil
 }

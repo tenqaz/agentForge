@@ -495,8 +495,6 @@ func TestRepositoryCreateSkillMapsUniqueConstraintToConflict(t *testing.T) {
 		Version:         1,
 		TemplatePath:    "/tmp/template-1",
 		ContentChecksum: checksumString(""),
-		SoulMDPath:      "/tmp/template-1/SOUL.md",
-		UserMDPath:      "/tmp/template-1/USER.md",
 		SkillsPath:      "/tmp/template-1/skills",
 		CreatedBy:       "admin-1",
 	}
@@ -594,8 +592,6 @@ func newTemplatesTestDB(t *testing.T) *sql.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			template_path TEXT NOT NULL,
 			content_checksum TEXT NOT NULL,
-			soul_md_path TEXT NOT NULL DEFAULT '',
-			user_md_path TEXT NOT NULL DEFAULT '',
 			soul_content TEXT NOT NULL DEFAULT '',
 			user_content TEXT NOT NULL DEFAULT '',
 			skills_path TEXT NOT NULL,
