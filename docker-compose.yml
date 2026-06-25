@@ -33,7 +33,6 @@ services:
       - AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID=${AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID:-}
     volumes:
       - agentforge-data:/data
-      - /mnt/nas/hermes-home:/data/agents
     restart: unless-stopped
     networks:
       - agentforge

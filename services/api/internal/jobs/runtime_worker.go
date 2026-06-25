@@ -369,9 +369,13 @@ func (w *RuntimeWorker) markJobFailed(ctx context.Context, jobID, errorCode, err
 
 func dataDirFromHermesHome(homePath, agentID string) (string, error) {
 	cleanHome := filepath.Clean(homePath)
-	expectedSuffix := filepath.Join("agents", agentID)
-	if !strings.HasSuffix(cleanHome, expectedSuffix) {
-		return "", fmt.Errorf("invalid hermes home path %q", homePath)
+	// Support both Docker mode ({dataDir}/agents/{agentID}/hermes-home)
+	// and ECI mode ({dataDir}/agents/{agentID}).
+	if strings.HasSuffix(cleanHome, filepath.Join("agents", agentID, "hermes-home")) {
+		return filepath.Dir(filepath.Dir(filepath.Dir(cleanHome))), nil
 	}
-	return filepath.Dir(filepath.Dir(cleanHome)), nil
+	if strings.HasSuffix(cleanHome, filepath.Join("agents", agentID)) {
+		return filepath.Dir(filepath.Dir(cleanHome)), nil
+	}
+	return "", fmt.Errorf("invalid hermes home path %q", homePath)
 }

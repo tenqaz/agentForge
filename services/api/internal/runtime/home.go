@@ -229,8 +229,8 @@ func copyDir(source, target string) error {
 
 // DestroyHome removes the agent's hermes-home directory. It is idempotent:
 // a missing directory is treated as success. The path is validated to be
-// under {dataDir}/agents/{agentID} and to be at least three levels deep,
-// refusing root or other shallow paths to avoid accidental destruction.
+// under {dataDir}/agents/{agentID}[/hermes-home] and deep enough to avoid
+// accidental destruction.
 func DestroyHome(homePath string) error {
 	trimmed := strings.TrimSpace(homePath)
 	if trimmed == "" {
@@ -241,10 +241,14 @@ func DestroyHome(homePath string) error {
 		return fmt.Errorf("resolve hermes home path: %w", err)
 	}
 	cleaned := filepath.Clean(abs)
-	// Validate: parent must be "agents" directory, preventing accidental
-	// destruction of non-agent paths. The agent dir itself contains all
-	// Hermes home files (SOUL.md, .env, skills/, etc.).
+	// Support two path formats:
+	//   Docker mode: {dataDir}/agents/{agentID}/hermes-home
+	//   ECI mode:    {dataDir}/agents/{agentID}
 	parent := filepath.Dir(cleaned)
+	if filepath.Base(cleaned) == "hermes-home" {
+		// Docker mode: parent is the agent ID dir, grandparent is agents/
+		parent = filepath.Dir(parent)
+	}
 	if filepath.Base(parent) != "agents" {
 		return fmt.Errorf("refuse to destroy path not under agents/: %s", cleaned)
 	}

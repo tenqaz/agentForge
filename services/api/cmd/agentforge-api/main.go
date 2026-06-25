@@ -98,7 +98,7 @@ func run() error {
 			runner = runtime.NewDockerRunner(cfg.DockerBin)
 			slog.Info("Using Docker runner")
 		}
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir)
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)

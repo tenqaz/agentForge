@@ -19,15 +19,17 @@ type Service struct {
 	runtimeJobs *jobs.RuntimeRepository
 	runner      runtime.Runner
 	dataDir     string
+	runnerMode  string
 }
 
-func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, runner runtime.Runner, dataDir string) *Service {
+func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, runner runtime.Runner, dataDir, runnerMode string) *Service {
 	return &Service{
 		database:    database,
 		repository:  repository,
 		runtimeJobs: runtimeJobs,
 		runner:      runner,
 		dataDir:     dataDir,
+		runnerMode:  runnerMode,
 	}
 }
 
@@ -57,6 +59,13 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Agent, error
 	}
 
 	agentID := uuid.NewString()
+	// In ECI mode the agent directory maps directly to NAS /hermes-home/{agentID}
+	// (bind-mounted via /mnt/nas/hermes-home:/data/agents). In Docker mode we
+	// keep the legacy hermes-home subdirectory for backward compatibility.
+	homePath := filepath.Join(s.dataDir, "agents", agentID, "hermes-home")
+	if s.runnerMode == "eci" {
+		homePath = filepath.Join(s.dataDir, "agents", agentID)
+	}
 	created, err := s.repository.Create(ctx, tx, Agent{
 		ID:              agentID,
 		OwnerUserID:     params.OwnerUserID,
@@ -64,7 +73,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Agent, error
 		TemplateVersion: templateVersion,
 		Name:            params.Name,
 		Status:          StatusCreating,
-		HermesHomePath:  filepath.Join(s.dataDir, "agents", agentID),
+		HermesHomePath:  homePath,
 	})
 	if err != nil {
 		return Agent{}, fmt.Errorf("create agent: %w", err)
