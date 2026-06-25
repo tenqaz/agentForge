@@ -23,6 +23,9 @@ type ChannelWorkerDependencies struct {
 	Runner             runtime.Runner
 	PollInterval       time.Duration
 	MaxRefreshAttempts int
+	HermesImage        string
+	HermesMemory       string
+	HermesCPUs         string
 }
 
 type ChannelWorker struct {
@@ -33,6 +36,9 @@ type ChannelWorker struct {
 	runner             runtime.Runner
 	pollInterval       time.Duration
 	maxRefreshAttempts int
+	hermesImage        string
+	hermesMemory       string
+	hermesCPUs         string
 }
 
 func NewChannelWorker(deps ChannelWorkerDependencies) *ChannelWorker {
@@ -58,6 +64,9 @@ func NewChannelWorker(deps ChannelWorkerDependencies) *ChannelWorker {
 		runner:             deps.Runner,
 		pollInterval:       interval,
 		maxRefreshAttempts: maxAttempts,
+		hermesImage:        deps.HermesImage,
+		hermesMemory:       deps.HermesMemory,
+		hermesCPUs:         deps.HermesCPUs,
 	}
 }
 
@@ -167,13 +176,15 @@ func (w *ChannelWorker) ProcessJob(ctx context.Context, jobID string) error {
 			if err := w.writeConfirmedCredentials(agent.HermesHomePath, status); err != nil {
 				return w.fail(ctx, job.ID, channel.ID, "credential_write_failed", fmt.Sprintf("write confirmed credentials: %v", err), channels.StatusError)
 			}
-			if err := w.runner.Stop(ctx, agent.RuntimeID); err != nil {
+			if err := w.runner.Stop(ctx, agent.RuntimeID); err != nil && !errors.Is(err, runtime.ErrContainerNotFound) {
 				return w.fail(ctx, job.ID, channel.ID, "runtime_restart_failed", fmt.Sprintf("stop runtime: %v", err), channels.StatusError)
 			}
 			if err := w.runner.EnsureRunning(ctx, runtime.ContainerSpec{
 				AgentID:    agent.ID,
 				HermesHome: agent.HermesHomePath,
-				Image:      "",
+				Image:      w.hermesImage,
+				Memory:     w.hermesMemory,
+				CPUs:       w.hermesCPUs,
 			}); err != nil {
 				return w.fail(ctx, job.ID, channel.ID, "runtime_restart_failed", fmt.Sprintf("ensure runtime running: %v", err), channels.StatusError)
 			}

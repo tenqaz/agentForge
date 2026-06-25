@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -188,7 +189,8 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 		Memory:        w.hermesMemory,
 		CPUs:          w.hermesCPUs,
 	}); err != nil {
-		return w.failProvision(ctx, job, agent, runtime.ErrCodeContainerStartFailed, "failed to start Hermes container")
+		slog.Error("ECI/container start failed", "error", err, "agentID", agent.ID)
+	return w.failProvision(ctx, job, agent, runtime.ErrCodeContainerStartFailed, err.Error())
 	}
 
 	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusRunning, runtimeID, "", ""); err != nil {
