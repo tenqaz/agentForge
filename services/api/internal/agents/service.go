@@ -64,7 +64,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Agent, error
 		TemplateVersion: templateVersion,
 		Name:            params.Name,
 		Status:          StatusCreating,
-		HermesHomePath:  filepath.Join(s.dataDir, "agents", agentID, "hermes-home"),
+		HermesHomePath:  filepath.Join(s.dataDir, "agents", agentID),
 	})
 	if err != nil {
 		return Agent{}, fmt.Errorf("create agent: %w", err)

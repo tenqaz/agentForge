@@ -228,9 +228,9 @@ func copyDir(source, target string) error {
 }
 
 // DestroyHome removes the agent's hermes-home directory. It is idempotent:
-// a missing directory is treated as success. The path is validated to end
-// with "hermes-home" and to be at least three levels deep, refusing root or
-// other shallow paths to avoid accidental destruction.
+// a missing directory is treated as success. The path is validated to be
+// under {dataDir}/agents/{agentID} and to be at least three levels deep,
+// refusing root or other shallow paths to avoid accidental destruction.
 func DestroyHome(homePath string) error {
 	trimmed := strings.TrimSpace(homePath)
 	if trimmed == "" {
@@ -241,10 +241,13 @@ func DestroyHome(homePath string) error {
 		return fmt.Errorf("resolve hermes home path: %w", err)
 	}
 	cleaned := filepath.Clean(abs)
-	if filepath.Base(cleaned) != "hermes-home" {
-		return fmt.Errorf("refuse to destroy non-hermes-home path: %s", cleaned)
-	}
+	// Validate: parent must be "agents" directory, preventing accidental
+	// destruction of non-agent paths. The agent dir itself contains all
+	// Hermes home files (SOUL.md, .env, skills/, etc.).
 	parent := filepath.Dir(cleaned)
+	if filepath.Base(parent) != "agents" {
+		return fmt.Errorf("refuse to destroy path not under agents/: %s", cleaned)
+	}
 	grandparent := filepath.Dir(parent)
 	separator := string(filepath.Separator)
 	if grandparent == separator || grandparent == "." || grandparent == filepath.VolumeName(grandparent)+separator {
