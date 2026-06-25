@@ -95,7 +95,7 @@ func run() error {
 			runner = eciRunner
 			slog.Info("Using ECI runner", "region", cfg.ECIRegion)
 		default:
-			runner = runtime.NewDockerRunner(cfg.DockerBin)
+			runner = runtime.NewDockerRunner(cfg.DockerBin, cfg.DockerAgentsVolume)
 			slog.Info("Using Docker runner")
 		}
 	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode)
