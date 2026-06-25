@@ -142,7 +142,15 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 			Memory:          requests.NewFloat(toECIMemoryFloat(spec.Memory)),
 			Cpu:             requests.NewFloat(toECICPUFloat(spec.CPUs)),
 			WorkingDir:      "/opt/data",
-			Command:        []string{"/init", "/opt/hermes/docker/main-wrapper.sh", "gateway", "run"},
+			Command: []string{
+					"/init",
+					"sh", "-c",
+					// Wait for the NFS mount to be ready before starting Hermes.
+					// On first boot the .env is written before the ECI is
+					// created, but NFS can lag. On restart (after pairing)
+					// the new .env is already on NAS.
+					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; exec /opt/hermes/docker/main-wrapper.sh gateway run",
+				},
 			EnvironmentVar: &envVars,
 			VolumeMount: &[]eci.CreateContainerGroupVolumeMount{
 				{
