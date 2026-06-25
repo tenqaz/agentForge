@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -171,6 +172,12 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 	slog.Info("ECI: ensuring NAS dir", "path", nasDir)
 	if err := r.createNASDir(nasDir); err != nil {
 		slog.Error("ECI: CreateDir failed", "path", nasDir, "error", err)
+	}
+
+	// Remove stale gateway state so Hermes does a fresh platform scan on
+	// every boot instead of inheriting a cached platforms:{} from before.
+	for _, f := range []string{"gateway_state.json", "gateway.lock", "gateway.pid"} {
+		_ = os.Remove(filepath.Join(spec.HermesHome, f))
 	}
 
 	req.Volume = &[]eci.CreateContainerGroupVolume{
