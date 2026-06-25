@@ -27,6 +27,11 @@ type Runner interface {
 	EnsureRunning(ctx context.Context, spec ContainerSpec) error
 	Stop(ctx context.Context, containerName string) error
 	Remove(ctx context.Context, containerName string) error
+	// Destroy forcefully stops and removes the container, blocking until it
+	// is fully gone (important for async runtimes like ECI). After Destroy
+	// returns without error, the container no longer exists and any mounted
+	// storage may be safely cleaned up.
+	Destroy(ctx context.Context, containerName string) error
 	Inspect(ctx context.Context, containerName string) (ContainerStatus, error)
 }
 
@@ -134,6 +139,20 @@ func (r *dockerRunner) Remove(ctx context.Context, containerName string) error {
 			return ErrContainerNotFound
 		}
 		return fmt.Errorf("docker rm failed: %w: %s", err, trimmed)
+	}
+	return nil
+}
+
+// Destroy forcefully stops and removes the container. Docker rm -f is
+// synchronous — no polling needed.
+func (r *dockerRunner) Destroy(ctx context.Context, containerName string) error {
+	output, err := exec.CommandContext(ctx, r.dockerBin, "rm", "-f", containerName).CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if isContainerNotFoundOutput(trimmed) {
+			return nil // already gone
+		}
+		return fmt.Errorf("docker destroy failed: %w: %s", err, trimmed)
 	}
 	return nil
 }

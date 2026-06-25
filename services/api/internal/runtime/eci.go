@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
@@ -240,6 +241,57 @@ func (r *eciRunner) Remove(ctx context.Context, containerName string) error {
 		return fmt.Errorf("eci: delete container group failed: %s", resp.GetHttpStatus())
 	}
 	return nil
+}
+
+// Destroy forcefully deletes the ECI container group and blocks until it is
+// fully gone or the context is cancelled. This is necessary because
+// DeleteContainerGroup is asynchronous — it returns immediately while the
+// group may still be terminating and writing to the NFS mount. Without
+// waiting, a subsequent DestroyHome can fail with "directory not empty".
+func (r *eciRunner) Destroy(ctx context.Context, containerName string) error {
+	// 1. Resolve the group ID and fire the delete.
+	groupID, err := r.containerGroupIDByName(containerName)
+	if err != nil {
+		if errors.Is(err, ErrContainerNotFound) {
+			return nil // already gone
+		}
+		return fmt.Errorf("eci: destroy: resolve group id: %w", err)
+	}
+
+	req := eci.CreateDeleteContainerGroupRequest()
+	req.ContainerGroupId = groupID
+	resp, err := r.client.DeleteContainerGroup(req)
+	if err != nil {
+		trimmed := strings.TrimSpace(err.Error())
+		if isECINotFound(trimmed) {
+			return nil
+		}
+		return fmt.Errorf("eci: destroy: delete: %w", err)
+	}
+	if !resp.IsSuccess() {
+		return fmt.Errorf("eci: destroy: delete returned %s", resp.GetHttpStatus())
+	}
+
+	// 2. Poll until the group is truly gone.
+	const maxWait = 30 * time.Second
+	const interval = 500 * time.Millisecond
+	deadline := time.Now().Add(maxWait)
+	for {
+		_, err := r.Inspect(ctx, containerName)
+		if err != nil {
+			if errors.Is(err, ErrContainerNotFound) {
+				return nil // fully gone
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("eci: timed out waiting for %s to be deleted", containerName)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
 }
 
 func (r *eciRunner) Inspect(ctx context.Context, containerName string) (ContainerStatus, error) {
