@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -142,6 +143,12 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 		agent.Status = agentStatusProvisioning
 	} else if agent.Status != agentStatusProvisioning && agent.Status != agentStatusStarting {
 		return ErrConflict
+	}
+
+	// Remove any leftover NAS directory from a previous failed agent to
+	// avoid stale NFS file handles when the new ECI container mounts it.
+	if err := os.RemoveAll(agent.HermesHomePath); err != nil {
+		slog.Warn("provision: failed to clean stale hermes home", "path", agent.HermesHomePath, "error", err)
 	}
 
 	template, err := w.loadTemplate(ctx, agent)
