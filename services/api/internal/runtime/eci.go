@@ -150,7 +150,7 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 					// On first boot the .env is written before the ECI is
 					// created, but NFS can lag. On restart (after pairing)
 					// the new .env is already on NAS.
-					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; exec /opt/hermes/docker/main-wrapper.sh gateway run",
+					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; chmod -R 777 /opt/data/weixin 2>/dev/null; exec /opt/hermes/docker/main-wrapper.sh gateway run",
 				},
 			EnvironmentVar: &envVars,
 			VolumeMount: &[]eci.CreateContainerGroupVolumeMount{
