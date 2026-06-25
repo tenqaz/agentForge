@@ -150,7 +150,14 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 					// On first boot the .env is written before the ECI is
 					// created, but NFS can lag. On restart (after pairing)
 					// the new .env is already on NAS.
-					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; chmod -R 777 /opt/data/weixin 2>/dev/null; exec /opt/hermes/docker/main-wrapper.sh gateway run",
+					// Always remove stale gateway state so Hermes does a
+					// fresh platform scan on every container boot. Without
+					// this, a gateway that crashed after writing an empty
+					// platforms:{} would skip WeChat init on the next
+					// restart (RestartPolicy: Always). It also defends
+					// against the dying previous ECI writing a stale
+					// gateway_state.json to the shared NAS mount.
+					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; chmod -R 777 /opt/data/weixin 2>/dev/null; rm -f /opt/data/gateway_state.json /opt/data/gateway.lock /opt/data/gateway.pid; exec /opt/hermes/docker/main-wrapper.sh gateway run",
 				},
 			EnvironmentVar: &envVars,
 			VolumeMount: &[]eci.CreateContainerGroupVolumeMount{
@@ -254,6 +261,17 @@ func (r *eciRunner) Inspect(ctx context.Context, containerName string) (Containe
 	status := ContainerStatus{Exists: true}
 
 	groupState := strings.ToLower(g.Status)
+
+	// Terminal group states: the group is gone or about to disappear.
+	// Never treat these as Running — even if the container inside still
+	// reports "running" (async deletion hasn't killed it yet). Otherwise
+	// EnsureRunning returns early and the agent is left with no container.
+	if isTerminalGroupState(groupState) {
+		status.Running = false
+		status.Status = "stopped"
+		return status, nil
+	}
+
 	// Check the actual container state, not just the group status.
 	// A group can be "Running" while a container inside is crashing.
 	containerRunning := false
@@ -345,6 +363,19 @@ func isECINotFound(msg string) bool {
 	return strings.Contains(lower, "not found") ||
 		strings.Contains(lower, "invalidcontainergroupid") ||
 		strings.Contains(lower, "does not exist")
+}
+
+// isTerminalGroupState reports whether the ECI container group status means
+// the group is gone or about to disappear. In these states the container
+// inside may still appear "Running" for a brief window (async deletion),
+// but the group must not be treated as healthy.
+func isTerminalGroupState(state string) bool {
+	switch state {
+	case "deleting", "deleted", "succeeded", "failed", "terminated":
+		return true
+	default:
+		return false
+	}
 }
 
 // createNASDir ensures the given path exists on the NAS file system
