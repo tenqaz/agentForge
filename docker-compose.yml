@@ -33,6 +33,7 @@ services:
       - AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID=${AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID:-}
     volumes:
       - agentforge-data:/data
+      - ${AGENTFORGE_NAS_DIR:-agentforge-agents-data}:/data/agents
     restart: unless-stopped
     networks:
       - agentforge
@@ -54,6 +55,7 @@ services:
 
 volumes:
   agentforge-data:
+  agentforge-agents-data:
 
 networks:
   agentforge:
