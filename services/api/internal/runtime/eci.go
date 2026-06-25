@@ -149,6 +149,7 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 					Name:      "hermes-data",
 					MountPath: "/opt/data",
 				},
+			},
 		},
 	}
 
@@ -171,6 +172,7 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 			NFSVolume: eci.CreateContainerGroupNFSVolume{
 				Server: r.nasHost,
 				Path:   nasDir,
+			},
 		},
 	}
 
