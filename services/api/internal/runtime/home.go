@@ -153,7 +153,9 @@ func ensureHomeLayout(homePath string) error {
 		filepath.Join(homePath, "weixin", "accounts"),
 	}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		// 0777 so the Hermes container user (non-root) can write runtime
+		// files — session snapshots, gateway logs, weixin sync state.
+		if err := os.MkdirAll(dir, 0o777); err != nil {
 			return err
 		}
 	}
