@@ -241,7 +241,7 @@ func newAgentTestRouter(t *testing.T) (http.Handler, *auth.SessionManager, *sql.
 	router := NewRouter(Dependencies{
 		AuthRepository:       auth.NewRepository(database),
 		SessionManager:       manager,
-		AgentService:         agents.NewService(database, agentRepository, jobRepository, nil, dataDir),
+		AgentService:         agents.NewService(database, agentRepository, jobRepository, nil, dataDir, "docker"),
 		RuntimeJobRepository: jobRepository,
 	})
 	return router, manager, database, dataDir

@@ -52,6 +52,10 @@ func (r *fakeRunner) Remove(ctx context.Context, containerName string) error {
 	return r.removeErr
 }
 
+func (r *fakeRunner) Destroy(ctx context.Context, containerName string) error {
+	return nil
+}
+
 // newServiceForDelete builds a Service against an in-memory DB pre-seeded
 // with one agent in the requested state. dataDir is set to a temp dir so
 // the agent's hermes_home_path resolves under it.
@@ -63,7 +67,7 @@ func newServiceForDelete(t *testing.T, agentID string, status Status, runner run
 	homePath := filepath.Join(dataDir, "agents", agentID, "hermes-home")
 	insertAgentFixtureWithHome(t, database, agentID, "user-1", status, homePath)
 	runtimeJobs := jobs.NewRuntimeRepository(database)
-	svc := NewService(database, repository, runtimeJobs, runner, dataDir)
+	svc := NewService(database, repository, runtimeJobs, runner, dataDir, "docker")
 	return svc, database, homePath
 }
 
@@ -123,7 +127,7 @@ func TestDeleteReturnsNotFoundForMissingAgent(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	runtimeJobs := jobs.NewRuntimeRepository(database)
-	svc := NewService(database, repository, runtimeJobs, runner, t.TempDir())
+	svc := NewService(database, repository, runtimeJobs, runner, t.TempDir(), "docker")
 
 	err := svc.Delete(context.Background(), "agent-missing")
 	if !errors.Is(err, ErrNotFound) {

@@ -125,9 +125,9 @@ func TestChannelWorkerConnectWeixinMarksExpiredQRCode(t *testing.T) {
 	jobID := insertChannelWorkerJob(t, database, channelID, jobs.TypeConnectWeixin)
 
 	worker := jobs.NewChannelWorker(jobs.ChannelWorkerDependencies{
-		Database:           database,
-		ChannelJobs:        jobs.NewChannelRepository(database),
-		Channels:           channels.NewRepository(database),
+		Database:    database,
+		ChannelJobs: jobs.NewChannelRepository(database),
+		Channels:    channels.NewRepository(database),
 		WeixinClient: &stubWeixinClient{
 			qrResponse: weixin.QRCodeResponse{QRCode: "qr-1", QRCodeImageContent: "data:image/png;base64,abc"},
 			statuses:   []weixin.QRStatusResponse{{Status: weixin.StatusExpired}},
@@ -166,9 +166,9 @@ func TestChannelWorkerConnectWeixinRefreshesExpiredQRCodeBeforeGivingUp(t *testi
 	jobID := insertChannelWorkerJob(t, database, channelID, jobs.TypeConnectWeixin)
 
 	worker := jobs.NewChannelWorker(jobs.ChannelWorkerDependencies{
-		Database:           database,
-		ChannelJobs:        jobs.NewChannelRepository(database),
-		Channels:           channels.NewRepository(database),
+		Database:    database,
+		ChannelJobs: jobs.NewChannelRepository(database),
+		Channels:    channels.NewRepository(database),
 		WeixinClient: &stubWeixinClient{
 			qrResponse: weixin.QRCodeResponse{QRCode: "qr-1", QRCodeImageContent: "data:image/png;base64,abc"},
 			statuses: []weixin.QRStatusResponse{
@@ -277,6 +277,10 @@ func (s *stubChannelRunner) Remove(_ context.Context, _ string) error {
 
 func (s *stubChannelRunner) Inspect(_ context.Context, _ string) (runtime.ContainerStatus, error) {
 	return s.status, s.inspectErr
+}
+
+func (s *stubChannelRunner) Destroy(_ context.Context, _ string) error {
+	return nil
 }
 
 func newChannelWorkerTestDB(t *testing.T) *sql.DB {

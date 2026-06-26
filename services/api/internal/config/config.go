@@ -57,6 +57,13 @@ type Config struct {
 	ECINASHost         string // NAS 挂载点地址
 	ECINASPath         string // NAS 上根路径，默认 "/"
 	ECINASFileSystemID string // NAS 文件系统 ID
+
+	// Brevo 事务邮件配置，用于发送注册验证码邮件。全部可选；未配置 API key 或
+	// 发件人邮箱时，发码端点在运行时返回 email_send_failed（500），不影响启动。
+	BrevoAPIKey      string
+	BrevoSenderEmail string
+	BrevoSenderName  string
+	BrevoBaseURL     string
 }
 
 func Load() (Config, error) {
@@ -76,22 +83,22 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		HTTPAddr:      value("AGENTFORGE_HTTP_ADDR", dotEnv, defaultHTTPAddr),
-		PublicBaseURL: value("AGENTFORGE_PUBLIC_BASE_URL", dotEnv, defaultPublicBaseURL),
-		DataDir:       dataDir,
-		SQLitePath:    filepath.Join(dataDir, "agentforge.db"),
-		SessionSecret: value("AGENTFORGE_SESSION_SECRET", dotEnv, defaultSessionSecret),
-		HermesImage:   value("AGENTFORGE_HERMES_IMAGE", dotEnv, defaultHermesImage),
-		HermesMemory:  value("AGENTFORGE_HERMES_MEMORY", dotEnv, defaultHermesMemory),
-		HermesCPUs:    value("AGENTFORGE_HERMES_CPUS", dotEnv, defaultHermesCPUs),
+		HTTPAddr:           value("AGENTFORGE_HTTP_ADDR", dotEnv, defaultHTTPAddr),
+		PublicBaseURL:      value("AGENTFORGE_PUBLIC_BASE_URL", dotEnv, defaultPublicBaseURL),
+		DataDir:            dataDir,
+		SQLitePath:         filepath.Join(dataDir, "agentforge.db"),
+		SessionSecret:      value("AGENTFORGE_SESSION_SECRET", dotEnv, defaultSessionSecret),
+		HermesImage:        value("AGENTFORGE_HERMES_IMAGE", dotEnv, defaultHermesImage),
+		HermesMemory:       value("AGENTFORGE_HERMES_MEMORY", dotEnv, defaultHermesMemory),
+		HermesCPUs:         value("AGENTFORGE_HERMES_CPUS", dotEnv, defaultHermesCPUs),
 		DockerBin:          defaultDockerBin,
 		DockerAgentsVolume: value("AGENTFORGE_DOCKER_AGENTS_VOLUME", dotEnv, "agentforge_agentforge-agents-data"),
 		WeixinBaseURL:      weixinBaseURL,
-		ModelDefault:  value("AGENTFORGE_MODEL_DEFAULT", dotEnv, ""),
-		ModelProvider: value("AGENTFORGE_MODEL_PROVIDER", dotEnv, ""),
-		ModelBaseURL:  value("AGENTFORGE_MODEL_BASE_URL", dotEnv, ""),
-		ModelAPIKey:   value("AGENTFORGE_MODEL_API_KEY", dotEnv, ""),
-		ModelAPIMode:  value("AGENTFORGE_MODEL_API_MODE", dotEnv, ""),
+		ModelDefault:       value("AGENTFORGE_MODEL_DEFAULT", dotEnv, ""),
+		ModelProvider:      value("AGENTFORGE_MODEL_PROVIDER", dotEnv, ""),
+		ModelBaseURL:       value("AGENTFORGE_MODEL_BASE_URL", dotEnv, ""),
+		ModelAPIKey:        value("AGENTFORGE_MODEL_API_KEY", dotEnv, ""),
+		ModelAPIMode:       value("AGENTFORGE_MODEL_API_MODE", dotEnv, ""),
 
 		RunnerMode:         value("AGENTFORGE_RUNNER_MODE", dotEnv, "docker"),
 		ECIRegion:          value("AGENTFORGE_ECI_REGION", dotEnv, ""),
@@ -104,6 +111,11 @@ func Load() (Config, error) {
 		ECINASHost:         value("AGENTFORGE_ECI_NAS_HOST", dotEnv, ""),
 		ECINASPath:         value("AGENTFORGE_ECI_NAS_PATH", dotEnv, "/"),
 		ECINASFileSystemID: value("AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID", dotEnv, ""),
+
+		BrevoAPIKey:      value("AGENTFORGE_BREVO_API_KEY", dotEnv, ""),
+		BrevoSenderEmail: value("AGENTFORGE_BREVO_SENDER_EMAIL", dotEnv, ""),
+		BrevoSenderName:  value("AGENTFORGE_BREVO_SENDER_NAME", dotEnv, ""),
+		BrevoBaseURL:     value("AGENTFORGE_BREVO_BASE_URL", dotEnv, "https://api.brevo.com"),
 	}, nil
 }
 

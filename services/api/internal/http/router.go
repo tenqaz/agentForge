@@ -18,9 +18,17 @@ type AuthRepository interface {
 	PasswordHashForUser(ctx context.Context, userID string) (string, error)
 }
 
+// VerificationService 抽象验证码发码、校验与消费，由 verification.Service 实现。
+type VerificationService interface {
+	SendRegistrationCode(ctx context.Context, email string) error
+	VerifyRegistrationCode(ctx context.Context, email, code string) error
+	ConsumeRegistrationCode(ctx context.Context, email string)
+}
+
 type Dependencies struct {
 	AuthRepository       AuthRepository
 	SessionManager       *auth.SessionManager
+	VerificationService  VerificationService
 	TemplateService      *templates.Service
 	AgentService         *agents.Service
 	RuntimeJobRepository *jobs.RuntimeRepository
@@ -39,8 +47,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	api := r.Group("/api")
 	NewHealthHandlers().Register(api)
 
-	if deps.AuthRepository != nil {
-		NewRegistrationHandlers(deps.AuthRepository).Register(api)
+	if deps.AuthRepository != nil && deps.VerificationService != nil {
+		NewRegistrationHandlers(deps.AuthRepository, deps.VerificationService).Register(api)
 	}
 
 	NewSessionHandlers(deps.AuthRepository, deps.SessionManager).Register(api)
