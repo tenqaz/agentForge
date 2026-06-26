@@ -325,13 +325,13 @@ func TestRuntimeWorkerRestartRuntimeRestartsRunningAgent(t *testing.T) {
 	runner := &stubRunner{}
 
 	worker := jobs.NewRuntimeWorker(jobs.RuntimeWorkerDependencies{
-		Database:    database,
-		RuntimeJobs: jobs.NewRuntimeRepository(database),
-		HomeBuilder: runtime.NewHomeBuilder(),
-		Runner:      runner,
-		HermesImage: "nousresearch/hermes-agent:v2026.6.5",
+		Database:     database,
+		RuntimeJobs:  jobs.NewRuntimeRepository(database),
+		HomeBuilder:  runtime.NewHomeBuilder(),
+		Runner:       runner,
+		HermesImage:  "nousresearch/hermes-agent:v2026.6.5",
 		HermesMemory: "500m",
-		HermesCPUs:  "0.5",
+		HermesCPUs:   "0.5",
 	})
 
 	if err := worker.ProcessJob(ctx, jobID); err != nil {
@@ -351,11 +351,11 @@ func TestRuntimeWorkerRestartRuntimeRestartsRunningAgent(t *testing.T) {
 }
 
 type stubRunner struct {
-	ensureErr error
-	status    runtime.ContainerStatus
-	inspectErr error
-	stopErr   error
-	stopCount int
+	ensureErr   error
+	status      runtime.ContainerStatus
+	inspectErr  error
+	stopErr     error
+	stopCount   int
 	ensureCount int
 }
 
@@ -375,6 +375,10 @@ func (s *stubRunner) Remove(_ context.Context, _ string) error {
 
 func (s *stubRunner) Inspect(_ context.Context, _ string) (runtime.ContainerStatus, error) {
 	return s.status, s.inspectErr
+}
+
+func (s *stubRunner) Destroy(_ context.Context, _ string) error {
+	return nil
 }
 
 type stubTemplateLoader struct {

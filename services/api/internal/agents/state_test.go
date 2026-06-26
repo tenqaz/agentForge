@@ -94,7 +94,7 @@ func TestServiceCreateCreatesAgentAndProvisionJob(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, nil, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir(), "docker")
 	ctx := context.Background()
 
 	created, err := service.Create(ctx, CreateParams{
@@ -140,7 +140,7 @@ func TestServiceCreateRejectsNonPublishedTemplates(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, nil, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir(), "docker")
 	ctx := context.Background()
 
 	for _, status := range []string{"draft", "archived"} {
@@ -168,7 +168,7 @@ func TestServiceCreateRuntimeJobRejectsUnavailableRuntime(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, nil, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir(), "docker")
 	ctx := context.Background()
 	insertAgentFixture(t, database, "agent-1", "user-1", StatusCreating)
 

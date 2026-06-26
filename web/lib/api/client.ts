@@ -18,6 +18,7 @@ import type {
   SkillsResponse,
   TemplateResponse,
   TemplatesResponse,
+  EmailCodeResponse,
   UserResponse,
 } from "./types";
 
@@ -202,10 +203,20 @@ export async function getSession(client: ApiClient) {
 
 export async function registerUser(
   client: ApiClient,
-  payload: { email: string; password: string },
+  payload: { email: string; password: string; emailCode: string },
 ) {
-  return client.post<UserResponse, { email: string; password: string }>(
+  return client.post<UserResponse, { email: string; password: string; emailCode: string }>(
     "/api/users",
+    payload,
+  );
+}
+
+export async function sendRegistrationEmailCode(
+  client: ApiClient,
+  payload: { email: string },
+) {
+  return client.post<EmailCodeResponse, { email: string }>(
+    "/api/registration/email-codes",
     payload,
   );
 }
@@ -428,6 +439,20 @@ export function apiErrorMessage(
       return "The template is incomplete and cannot be published yet.";
     case "email_already_exists":
       return "An account with this email already exists.";
+    case "email_code_required":
+      return "Enter the email code.";
+    case "email_code_invalid":
+      return "The email code is incorrect.";
+    case "email_code_expired":
+      return "The email code has expired. Please request a new one.";
+    case "email_code_cooldown":
+      return "A code was sent recently. Please wait before trying again.";
+    case "email_code_rate_limited":
+      return "Too many codes were requested. Please try again later.";
+    case "email_code_attempts_exhausted":
+      return "Too many incorrect attempts. Please request a new code.";
+    case "email_send_failed":
+      return "We could not send the email code. Please try again.";
     case "email_conflict":
       return "This email cannot be used right now. Please contact support.";
     case "not_found":

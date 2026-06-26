@@ -21,6 +21,7 @@ import (
 	"agentforge.local/services/api/internal/jobs"
 	"agentforge.local/services/api/internal/runtime"
 	"agentforge.local/services/api/internal/templates"
+	"agentforge.local/services/api/internal/verification"
 	"agentforge.local/services/api/internal/weixin"
 )
 
@@ -137,9 +138,27 @@ func run() error {
 		ChannelWorker: channelWorker,
 	})
 
+	verificationStore := verification.NewMemoryStore(nil)
+	// 后台周期性清理过期验证码，避免无人发码时记录持续占用内存。
+	go verificationStore.RunCleanup(ctx, 5*time.Minute)
+	if cfg.BrevoAPIKey == "" || cfg.BrevoSenderEmail == "" {
+		slog.Warn("Brevo email not configured; registration email codes will fail at runtime",
+			"api_key_set", cfg.BrevoAPIKey != "",
+			"sender_email_set", cfg.BrevoSenderEmail != "")
+	}
+	verificationMailer := verification.NewBrevoMailer(
+		cfg.BrevoAPIKey,
+		cfg.BrevoSenderEmail,
+		cfg.BrevoSenderName,
+		cfg.BrevoBaseURL,
+		nil,
+	)
+	verificationService := verification.NewService(verificationStore, verificationMailer, nil)
+
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		AuthRepository:       authRepo,
 		SessionManager:       sessionManager,
+		VerificationService:  verificationService,
 		TemplateService:      templateService,
 		AgentService:         agentService,
 		RuntimeJobRepository: runtimeJobs,

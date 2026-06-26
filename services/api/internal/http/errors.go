@@ -106,6 +106,20 @@ func publicMessageForCode(code string) string {
 		return "runtime unavailable"
 	case "agent_not_running":
 		return "agent not running"
+	case "email_code_required":
+		return "email code required"
+	case "email_code_invalid":
+		return "email code invalid"
+	case "email_code_expired":
+		return "email code expired"
+	case "email_code_cooldown":
+		return "email code cooldown"
+	case "email_code_rate_limited":
+		return "email code rate limited"
+	case "email_code_attempts_exhausted":
+		return "email code attempts exhausted"
+	case "email_send_failed":
+		return "email send failed"
 	default:
 		return "internal error"
 	}
