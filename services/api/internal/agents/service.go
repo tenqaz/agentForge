@@ -19,15 +19,17 @@ type Service struct {
 	runtimeJobs *jobs.RuntimeRepository
 	runner      runtime.Runner
 	dataDir     string
+	runnerMode  string
 }
 
-func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, runner runtime.Runner, dataDir string) *Service {
+func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, runner runtime.Runner, dataDir, runnerMode string) *Service {
 	return &Service{
 		database:    database,
 		repository:  repository,
 		runtimeJobs: runtimeJobs,
 		runner:      runner,
 		dataDir:     dataDir,
+		runnerMode:  runnerMode,
 	}
 }
 
@@ -57,6 +59,13 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Agent, error
 	}
 
 	agentID := uuid.NewString()
+	// In ECI mode the agent directory maps directly to NAS /hermes-home/{agentID}
+	// (bind-mounted via /mnt/nas/hermes-home:/data/agents). In Docker mode we
+	// keep the legacy hermes-home subdirectory for backward compatibility.
+	homePath := filepath.Join(s.dataDir, "agents", agentID, "hermes-home")
+	if s.runnerMode == "eci" {
+		homePath = filepath.Join(s.dataDir, "agents", agentID)
+	}
 	created, err := s.repository.Create(ctx, tx, Agent{
 		ID:              agentID,
 		OwnerUserID:     params.OwnerUserID,
@@ -64,7 +73,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (Agent, error
 		TemplateVersion: templateVersion,
 		Name:            params.Name,
 		Status:          StatusCreating,
-		HermesHomePath:  filepath.Join(s.dataDir, "agents", agentID, "hermes-home"),
+		HermesHomePath:  homePath,
 	})
 	if err != nil {
 		return Agent{}, fmt.Errorf("create agent: %w", err)
@@ -167,25 +176,13 @@ func (s *Service) Delete(ctx context.Context, agentID string) error {
 		return ErrHasUnfinishedJobs
 	}
 
+	// Destroy the ECI/Docker container first and wait until it is fully
+	// gone. For ECI this polls until the container group disappears, so
+	// the NFS mount is released before we clean up files below.
 	containerName := runtime.DefaultContainerName(agentID)
-	status, inspectErr := s.runner.Inspect(ctx, containerName)
-	if inspectErr != nil && !errors.Is(inspectErr, runtime.ErrContainerNotFound) {
-		return s.failWith(ctx, agentID, DeleteFailureInspect,
-			fmt.Errorf("inspect container: %w", inspectErr))
-	}
-	if inspectErr == nil {
-		if status.Running {
-			if err := s.runner.Stop(ctx, containerName); err != nil {
-				return s.failWith(ctx, agentID, DeleteFailureStop,
-					fmt.Errorf("stop container: %w", err))
-			}
-		}
-		if err := s.runner.Remove(ctx, containerName); err != nil {
-			if !errors.Is(err, runtime.ErrContainerNotFound) {
-				return s.failWith(ctx, agentID, DeleteFailureRemove,
-					fmt.Errorf("remove container: %w", err))
-			}
-		}
+	if err := s.runner.Destroy(ctx, containerName); err != nil {
+		return s.failWith(ctx, agentID, DeleteFailureRemove,
+			fmt.Errorf("destroy container: %w", err))
 	}
 
 	if err := runtime.DestroyHome(agent.HermesHomePath); err != nil {

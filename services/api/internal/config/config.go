@@ -33,12 +33,30 @@ type Config struct {
 	HermesMemory  string
 	HermesCPUs    string
 	DockerBin     string
-	WeixinBaseURL string
-	ModelDefault  string
-	ModelProvider string
-	ModelBaseURL  string
-	ModelAPIKey   string
-	ModelAPIMode  string
+	// DockerAgentsVolume is the Docker named volume that stores agent data
+	// under /data/agents/. Used by the Docker runner to share data with
+	// Hermes containers (avoids bind-mount issues on macOS).
+	DockerAgentsVolume string
+	WeixinBaseURL      string
+	ModelDefault       string
+	ModelProvider      string
+	ModelBaseURL       string
+	ModelAPIKey        string
+	ModelAPIMode       string
+
+	// ECI (Alibaba Cloud Elastic Container Instance) settings.
+	// When RunnerMode is "eci", these must be configured.
+	RunnerMode         string // "docker" (default) or "eci"
+	ECIRegion          string
+	ECIAccessKeyID     string
+	ECIAccessKeySecret string
+	ECISecurityGroupID string
+	ECIVSwitchID       string
+	ECIImageCacheID    string // optional, accelerates cold starts
+	ECIEIPInstanceID   string // optional, EIP to bind to container group
+	ECINASHost         string // NAS 挂载点地址
+	ECINASPath         string // NAS 上根路径，默认 "/"
+	ECINASFileSystemID string // NAS 文件系统 ID
 }
 
 func Load() (Config, error) {
@@ -66,13 +84,26 @@ func Load() (Config, error) {
 		HermesImage:   value("AGENTFORGE_HERMES_IMAGE", dotEnv, defaultHermesImage),
 		HermesMemory:  value("AGENTFORGE_HERMES_MEMORY", dotEnv, defaultHermesMemory),
 		HermesCPUs:    value("AGENTFORGE_HERMES_CPUS", dotEnv, defaultHermesCPUs),
-		DockerBin:     defaultDockerBin,
-		WeixinBaseURL: weixinBaseURL,
+		DockerBin:          defaultDockerBin,
+		DockerAgentsVolume: value("AGENTFORGE_DOCKER_AGENTS_VOLUME", dotEnv, "agentforge_agentforge-agents-data"),
+		WeixinBaseURL:      weixinBaseURL,
 		ModelDefault:  value("AGENTFORGE_MODEL_DEFAULT", dotEnv, ""),
 		ModelProvider: value("AGENTFORGE_MODEL_PROVIDER", dotEnv, ""),
 		ModelBaseURL:  value("AGENTFORGE_MODEL_BASE_URL", dotEnv, ""),
 		ModelAPIKey:   value("AGENTFORGE_MODEL_API_KEY", dotEnv, ""),
 		ModelAPIMode:  value("AGENTFORGE_MODEL_API_MODE", dotEnv, ""),
+
+		RunnerMode:         value("AGENTFORGE_RUNNER_MODE", dotEnv, "docker"),
+		ECIRegion:          value("AGENTFORGE_ECI_REGION", dotEnv, ""),
+		ECIAccessKeyID:     value("AGENTFORGE_ECI_ACCESS_KEY_ID", dotEnv, ""),
+		ECIAccessKeySecret: value("AGENTFORGE_ECI_ACCESS_KEY_SECRET", dotEnv, ""),
+		ECISecurityGroupID: value("AGENTFORGE_ECI_SECURITY_GROUP_ID", dotEnv, ""),
+		ECIVSwitchID:       value("AGENTFORGE_ECI_VSWITCH_ID", dotEnv, ""),
+		ECIImageCacheID:    value("AGENTFORGE_ECI_IMAGE_CACHE_ID", dotEnv, ""),
+		ECIEIPInstanceID:   value("AGENTFORGE_ECI_EIP_INSTANCE_ID", dotEnv, ""),
+		ECINASHost:         value("AGENTFORGE_ECI_NAS_HOST", dotEnv, ""),
+		ECINASPath:         value("AGENTFORGE_ECI_NAS_PATH", dotEnv, "/"),
+		ECINASFileSystemID: value("AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID", dotEnv, ""),
 	}, nil
 }
 

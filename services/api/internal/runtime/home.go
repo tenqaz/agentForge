@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"agentforge.local/services/api/internal/templates"
 )
@@ -155,7 +156,9 @@ func ensureHomeLayout(homePath string) error {
 		filepath.Join(homePath, "weixin", "accounts"),
 	}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		// 0777 so the Hermes container user (non-root) can write runtime
+		// files — session snapshots, gateway logs, weixin sync state.
+		if err := os.MkdirAll(dir, 0o777); err != nil {
 			return err
 		}
 	}
@@ -230,9 +233,15 @@ func copyDir(source, target string) error {
 }
 
 // DestroyHome removes the agent's hermes-home directory. It is idempotent:
-// a missing directory is treated as success. The path is validated to end
-// with "hermes-home" and to be at least three levels deep, refusing root or
-// other shallow paths to avoid accidental destruction.
+// a missing directory is treated as success. The path is validated to be
+// under {dataDir}/agents/{agentID}[/hermes-home] and deep enough to avoid
+// accidental destruction.
+//
+// On NFS, os.RemoveAll can fail with "directory not empty" even when the
+// container that created the files is gone — NFS attribute caches and
+// stray .nfs* files can delay cleanup. We work around this by walking the
+// tree bottom-up and removing entries individually, then retrying the
+// whole operation up to 3 times with a short sleep between attempts.
 func DestroyHome(homePath string) error {
 	trimmed := strings.TrimSpace(homePath)
 	if trimmed == "" {
@@ -243,17 +252,68 @@ func DestroyHome(homePath string) error {
 		return fmt.Errorf("resolve hermes home path: %w", err)
 	}
 	cleaned := filepath.Clean(abs)
-	if filepath.Base(cleaned) != "hermes-home" {
-		return fmt.Errorf("refuse to destroy non-hermes-home path: %s", cleaned)
-	}
+	// Support two path formats:
+	//   Docker mode: {dataDir}/agents/{agentID}/hermes-home
+	//   ECI mode:    {dataDir}/agents/{agentID}
 	parent := filepath.Dir(cleaned)
+	if filepath.Base(cleaned) == "hermes-home" {
+		// Docker mode: parent is the agent ID dir, grandparent is agents/
+		parent = filepath.Dir(parent)
+	}
+	if filepath.Base(parent) != "agents" {
+		return fmt.Errorf("refuse to destroy path not under agents/: %s", cleaned)
+	}
 	grandparent := filepath.Dir(parent)
 	separator := string(filepath.Separator)
 	if grandparent == separator || grandparent == "." || grandparent == filepath.VolumeName(grandparent)+separator {
 		return fmt.Errorf("refuse to destroy shallow path: %s", cleaned)
 	}
-	if err := os.RemoveAll(cleaned); err != nil {
-		return fmt.Errorf("remove hermes home: %w", err)
+
+	// On NFS, os.RemoveAll can transiently fail with ENOTEMPTY. Walk the
+	// tree bottom-up to remove individual entries, then retry.
+	const maxRetries = 3
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(500 * time.Millisecond)
+		}
+		lastErr = removeAllNFS(cleaned)
+		if lastErr == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("remove hermes home: %w", lastErr)
+}
+
+// removeAllNFS walks the directory tree bottom-up, removing files and then
+// directories. It tolerates ENOENT at any point (the entry may have been
+// deleted by a concurrent NFS operation).
+func removeAllNFS(root string) error {
+	// Collect paths in bottom-up order so we delete children before parents.
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			// If we can't access a path, skip it — we'll retry.
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Delete bottom-up (reverse order).
+	for i := len(paths) - 1; i >= 0; i-- {
+		p := paths[i]
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			// ENOTEMPTY on a directory means a child appeared — continue
+			// and let the outer retry loop handle it.
+			if os.IsExist(err) {
+				continue
+			}
+			return err
+		}
 	}
 	return nil
 }

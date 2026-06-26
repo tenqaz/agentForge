@@ -27,6 +27,11 @@ type Runner interface {
 	EnsureRunning(ctx context.Context, spec ContainerSpec) error
 	Stop(ctx context.Context, containerName string) error
 	Remove(ctx context.Context, containerName string) error
+	// Destroy forcefully stops and removes the container, blocking until it
+	// is fully gone (important for async runtimes like ECI). After Destroy
+	// returns without error, the container no longer exists and any mounted
+	// storage may be safely cleaned up.
+	Destroy(ctx context.Context, containerName string) error
 	Inspect(ctx context.Context, containerName string) (ContainerStatus, error)
 }
 
@@ -46,14 +51,15 @@ type ContainerStatus struct {
 }
 
 type dockerRunner struct {
-	dockerBin string
+	dockerBin   string
+	agentsVolume string // Docker named volume for /data/agents
 }
 
-func NewDockerRunner(dockerBin string) Runner {
+func NewDockerRunner(dockerBin, agentsVolume string) Runner {
 	if strings.TrimSpace(dockerBin) == "" {
 		dockerBin = "docker"
 	}
-	return &dockerRunner{dockerBin: dockerBin}
+	return &dockerRunner{dockerBin: dockerBin, agentsVolume: agentsVolume}
 }
 
 func DefaultContainerName(agentID string) string {
@@ -65,10 +71,6 @@ func (r *dockerRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) er
 		return errors.New("agent id is required")
 	}
 	containerName := DefaultContainerName(spec.AgentID)
-	homePath, err := filepath.Abs(spec.HermesHome)
-	if err != nil {
-		return err
-	}
 
 	status, err := r.Inspect(ctx, containerName)
 	if err == nil {
@@ -85,19 +87,35 @@ func (r *dockerRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) er
 		return err
 	}
 
+	// Mount the same named volume the API uses for /data/agents so Hermes
+	// can read SOUL.md, skills, and write logs/sessions. This avoids
+	// bind-mounting a path that may not be shared (e.g. macOS Docker Desktop).
+	hermesHome := "/opt/data"
+	if strings.TrimSpace(r.agentsVolume) != "" {
+		hermesHome = "/data/agents/" + spec.AgentID + "/hermes-home"
+	}
+
 	args := []string{
 		"run",
 		"-d",
 		"--name", containerName,
 		"--restart", "unless-stopped",
-		"-v", homePath + ":/opt/data",
-		"-e", "HERMES_HOME=/opt/data",
+		"-e", "HERMES_HOME=" + hermesHome,
 		"--memory=" + spec.Memory,
 		"--cpus=" + spec.CPUs,
-		spec.Image,
-		"gateway",
-		"run",
 	}
+	if r.agentsVolume != "" {
+		args = append(args, "-v", r.agentsVolume+":/data/agents")
+	} else {
+		// Fallback: bind-mount from API container filesystem (legacy).
+		homePath, err := filepath.Abs(spec.HermesHome)
+		if err != nil {
+			return err
+		}
+		args = append(args, "-v", homePath+":/opt/data")
+	}
+	args = append(args, spec.Image, "gateway", "run")
+
 	output, err := exec.CommandContext(ctx, r.dockerBin, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker run failed: %w: %s", err, strings.TrimSpace(string(output)))
@@ -121,6 +139,20 @@ func (r *dockerRunner) Remove(ctx context.Context, containerName string) error {
 			return ErrContainerNotFound
 		}
 		return fmt.Errorf("docker rm failed: %w: %s", err, trimmed)
+	}
+	return nil
+}
+
+// Destroy forcefully stops and removes the container. Docker rm -f is
+// synchronous — no polling needed.
+func (r *dockerRunner) Destroy(ctx context.Context, containerName string) error {
+	output, err := exec.CommandContext(ctx, r.dockerBin, "rm", "-f", containerName).CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if isContainerNotFoundOutput(trimmed) {
+			return nil // already gone
+		}
+		return fmt.Errorf("docker destroy failed: %w: %s", err, trimmed)
 	}
 	return nil
 }

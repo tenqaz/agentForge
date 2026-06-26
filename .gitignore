@@ -1,6 +1,7 @@
 .superpowers/
 .worktrees/
 var/
+.env
 services/api/.env
 web/.env.local
 .codegraph

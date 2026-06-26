@@ -1,0 +1,62 @@
+services:
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: agentforge-api
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      - AGENTFORGE_HTTP_ADDR=:8080
+      - AGENTFORGE_PUBLIC_BASE_URL=http://localhost:${API_PORT:-8080}
+      - AGENTFORGE_DATA_DIR=/data
+      - AGENTFORGE_SESSION_SECRET=${AGENTFORGE_SESSION_SECRET:-change-me-in-production}
+      - AGENTFORGE_HERMES_IMAGE=${AGENTFORGE_HERMES_IMAGE:-nousresearch/hermes-agent:v2026.6.5}
+      - AGENTFORGE_HERMES_MEMORY=${AGENTFORGE_HERMES_MEMORY:-500m}
+      - AGENTFORGE_HERMES_CPUS=${AGENTFORGE_HERMES_CPUS:-0.5}
+      - AGENTFORGE_WEIXIN_BASE_URL=${AGENTFORGE_WEIXIN_BASE_URL:-https://ilinkai.weixin.qq.com}
+      - AGENTFORGE_MODEL_DEFAULT=${AGENTFORGE_MODEL_DEFAULT:-deepseek-v4-flash}
+      - AGENTFORGE_MODEL_PROVIDER=${AGENTFORGE_MODEL_PROVIDER:-custom}
+      - AGENTFORGE_MODEL_BASE_URL=${AGENTFORGE_MODEL_BASE_URL:-https://api.deepseek.com}
+      - AGENTFORGE_MODEL_API_KEY=${AGENTFORGE_MODEL_API_KEY}
+      - AGENTFORGE_MODEL_API_MODE=${AGENTFORGE_MODEL_API_MODE:-chat_completions}
+      - AGENTFORGE_RUNNER_MODE=${AGENTFORGE_RUNNER_MODE:-docker}
+      - AGENTFORGE_ECI_REGION=${AGENTFORGE_ECI_REGION:-}
+      - AGENTFORGE_ECI_ACCESS_KEY_ID=${AGENTFORGE_ECI_ACCESS_KEY_ID:-}
+      - AGENTFORGE_ECI_ACCESS_KEY_SECRET=${AGENTFORGE_ECI_ACCESS_KEY_SECRET:-}
+      - AGENTFORGE_ECI_SECURITY_GROUP_ID=${AGENTFORGE_ECI_SECURITY_GROUP_ID:-}
+      - AGENTFORGE_ECI_VSWITCH_ID=${AGENTFORGE_ECI_VSWITCH_ID:-}
+      - AGENTFORGE_ECI_IMAGE_CACHE_ID=${AGENTFORGE_ECI_IMAGE_CACHE_ID:-}
+      - AGENTFORGE_ECI_EIP_INSTANCE_ID=${AGENTFORGE_ECI_EIP_INSTANCE_ID:-}
+      - AGENTFORGE_ECI_NAS_HOST=${AGENTFORGE_ECI_NAS_HOST:-}
+      - AGENTFORGE_ECI_NAS_PATH=${AGENTFORGE_ECI_NAS_PATH:-/}
+      - AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID=${AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID:-}
+    volumes:
+      - agentforge-data:/data
+      - ${AGENTFORGE_NAS_DIR:-agentforge-agents-data}:/data/agents
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - agentforge
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: agentforge-web
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      - AGENTFORGE_API_BASE_URL=http://api:8080
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - agentforge
+
+volumes:
+  agentforge-data:
+  agentforge-agents-data:
+
+networks:
+  agentforge:

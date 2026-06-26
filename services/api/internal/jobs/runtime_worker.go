@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -143,6 +145,12 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 		return ErrConflict
 	}
 
+	// Remove any leftover NAS directory from a previous failed agent to
+	// avoid stale NFS file handles when the new ECI container mounts it.
+	if err := os.RemoveAll(agent.HermesHomePath); err != nil {
+		slog.Warn("provision: failed to clean stale hermes home", "path", agent.HermesHomePath, "error", err)
+	}
+
 	template, err := w.loadTemplate(ctx, agent)
 	if err != nil {
 		return w.failProvision(ctx, job, agent, runtime.ErrCodeCopyTemplateFailed, "failed to copy template files")
@@ -190,7 +198,8 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 		Memory:        w.hermesMemory,
 		CPUs:          w.hermesCPUs,
 	}); err != nil {
-		return w.failProvision(ctx, job, agent, runtime.ErrCodeContainerStartFailed, "failed to start Hermes container")
+		slog.Error("ECI/container start failed", "error", err, "agentID", agent.ID)
+	return w.failProvision(ctx, job, agent, runtime.ErrCodeContainerStartFailed, err.Error())
 	}
 
 	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusRunning, runtimeID, "", ""); err != nil {
@@ -367,9 +376,13 @@ func (w *RuntimeWorker) markJobFailed(ctx context.Context, jobID, errorCode, err
 
 func dataDirFromHermesHome(homePath, agentID string) (string, error) {
 	cleanHome := filepath.Clean(homePath)
-	expectedSuffix := filepath.Join("agents", agentID, "hermes-home")
-	if !strings.HasSuffix(cleanHome, expectedSuffix) {
-		return "", fmt.Errorf("invalid hermes home path %q", homePath)
+	// Support both Docker mode ({dataDir}/agents/{agentID}/hermes-home)
+	// and ECI mode ({dataDir}/agents/{agentID}).
+	if strings.HasSuffix(cleanHome, filepath.Join("agents", agentID, "hermes-home")) {
+		return filepath.Dir(filepath.Dir(filepath.Dir(cleanHome))), nil
 	}
-	return filepath.Dir(filepath.Dir(filepath.Dir(cleanHome))), nil
+	if strings.HasSuffix(cleanHome, filepath.Join("agents", agentID)) {
+		return filepath.Dir(filepath.Dir(cleanHome)), nil
+	}
+	return "", fmt.Errorf("invalid hermes home path %q", homePath)
 }

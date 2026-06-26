@@ -74,8 +74,31 @@ func run() error {
 	runtimeJobs := jobs.NewRuntimeRepository(database)
 	agentRepo := agents.NewRepository(database)
 	templateService := templates.NewService(templateRepo, templateStore, agentRepo)
-	runner := runtime.NewDockerRunner(cfg.DockerBin)
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir)
+	var runner runtime.Runner
+		switch cfg.RunnerMode {
+		case "eci":
+			eciRunner, err := runtime.NewECIRunner(runtime.ECIConfig{
+				Region:           cfg.ECIRegion,
+				AccessKeyID:      cfg.ECIAccessKeyID,
+				AccessKeySecret:  cfg.ECIAccessKeySecret,
+				SecurityGroupID:  cfg.ECISecurityGroupID,
+				VSwitchID:        cfg.ECIVSwitchID,
+				ImageCacheID:     cfg.ECIImageCacheID,
+				EIPInstanceID:    cfg.ECIEIPInstanceID,
+				NASHost:          cfg.ECINASHost,
+				NASPath:          cfg.ECINASPath,
+				NASFileSystemID:  cfg.ECINASFileSystemID,
+			})
+			if err != nil {
+				return fmt.Errorf("eci runner: %w", err)
+			}
+			runner = eciRunner
+			slog.Info("Using ECI runner", "region", cfg.ECIRegion)
+		default:
+			runner = runtime.NewDockerRunner(cfg.DockerBin, cfg.DockerAgentsVolume)
+			slog.Info("Using Docker runner")
+		}
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)
@@ -103,6 +126,9 @@ func run() error {
 		Channels:     channelRepo,
 		WeixinClient: weixinClient,
 		Runner:       runner,
+		HermesImage:  cfg.HermesImage,
+		HermesMemory: cfg.HermesMemory,
+		HermesCPUs:   cfg.HermesCPUs,
 	})
 	supervisor := jobs.NewSupervisor(jobs.SupervisorDependencies{
 		RuntimeJobs:   runtimeJobs,
