@@ -146,7 +146,9 @@ func newMVPFixture(t *testing.T) mvpFixture {
 	runtimeJobs := jobs.NewRuntimeRepository(database)
 	agentRepo := agents.NewRepository(database)
 	runner := &integrationRunner{}
+
 	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, dataDir, "docker", "", "", "")
+
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)
@@ -264,6 +266,10 @@ func (r *integrationRunner) Remove(_ context.Context, _ string) error {
 
 func (r *integrationRunner) Inspect(_ context.Context, _ string) (runtime.ContainerStatus, error) {
 	return runtime.ContainerStatus{Exists: true, Running: true, Status: "running"}, nil
+}
+
+func (r *integrationRunner) Destroy(_ context.Context, _ string) error {
+	return nil
 }
 
 func (r *integrationRunner) StopCalls() int {

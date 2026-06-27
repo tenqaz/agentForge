@@ -42,9 +42,11 @@ func TestRuntimePersistenceRestartKeepsSessionsAndWeixinAccountFiles(t *testing.
 		nil,
 		fixture.dataDir,
 		"docker",
+
 		"",
 		"",
 		"",
+
 	)
 	createdAgent, err := agentService.Create(ctx, agents.CreateParams{
 		OwnerUserID: "user-1",

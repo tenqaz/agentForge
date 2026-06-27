@@ -20,19 +20,11 @@ func TestProvisionHermesHomeCopiesTemplateAndPreservesSessions(t *testing.T) {
 	template := templates.Template{
 		ID:           "template-1",
 		Version:      3,
-		SoulMDPath:   filepath.Join(templateRoot, "SOUL.md"),
-		UserMDPath:   filepath.Join(templateRoot, "USER.md"),
 		SkillsPath:   filepath.Join(templateRoot, "skills"),
 		TemplatePath: templateRoot,
 	}
 	if err := os.MkdirAll(filepath.Join(template.SkillsPath, "faq"), 0o755); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
-	}
-	if err := os.WriteFile(template.SoulMDPath, []byte("Soul contents"), 0o644); err != nil {
-		t.Fatalf("write SOUL.md: %v", err)
-	}
-	if err := os.WriteFile(template.UserMDPath, []byte("User memory"), 0o644); err != nil {
-		t.Fatalf("write USER.md: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(template.SkillsPath, "faq", "SKILL.md"), []byte("# FAQ"), 0o644); err != nil {
 		t.Fatalf("write skill: %v", err)
@@ -49,9 +41,11 @@ func TestProvisionHermesHomeCopiesTemplateAndPreservesSessions(t *testing.T) {
 
 	builder := NewHomeBuilder()
 	spec := HomeSpec{
-		AgentID:  "agent-internal-id",
-		HomePath: homePath,
-		Template: template,
+		AgentID:     "agent-internal-id",
+		HomePath:    homePath,
+		Template:    template,
+		SoulContent: "Soul contents",
+		UserContent: "User memory",
 		Provider: ProviderConfig{
 			DefaultModel: "deepseek-v4-flash",
 			Provider:     "custom",
@@ -123,10 +117,10 @@ func TestProvisionHermesHomeReturnsCopyTemplateFailed(t *testing.T) {
 		Template: templates.Template{
 			ID:         "template-1",
 			Version:    1,
-			SoulMDPath: filepath.Join(root, "missing", "SOUL.md"),
-			UserMDPath: filepath.Join(root, "missing", "USER.md"),
 			SkillsPath: filepath.Join(root, "missing", "skills"),
 		},
+		SoulContent: "",
+		UserContent: "",
 		Provider: ProviderConfig{
 			DefaultModel: "deepseek-v4-flash",
 			Provider:     "custom",

@@ -65,8 +65,6 @@ func (s *Service) Create(ctx context.Context, createdBy, name, description strin
 		Version:         version,
 		TemplatePath:    paths.TemplatePath,
 		ContentChecksum: checksumString(""),
-		SoulMDPath:      paths.SoulMDPath,
-		UserMDPath:      paths.UserMDPath,
 		SkillsPath:      paths.SkillsPath,
 		CreatedBy:       createdBy,
 	}
@@ -89,12 +87,13 @@ func (s *Service) CreateWithContents(ctx context.Context, params CreateTemplateP
 		_ = s.store.DeleteTemplate(template)
 		return Template{}, fmt.Errorf("%w: soul content cannot be empty", ErrInvalidInput)
 	}
-	if err := s.store.WriteSoul(template, params.SoulContent); err != nil {
+	if _, err := s.repository.UpdateSoulContent(ctx, template.ID, params.SoulContent); err != nil {
 		_ = s.repository.DeleteTemplate(ctx, template.ID)
 		_ = s.store.DeleteTemplate(template)
 		return Template{}, err
 	}
-	if err := s.store.WriteUser(template, params.UserContent); err != nil {
+	template, err = s.repository.UpdateUserContent(ctx, template.ID, params.UserContent)
+	if err != nil {
 		_ = s.repository.DeleteTemplate(ctx, template.ID)
 		_ = s.store.DeleteTemplate(template)
 		return Template{}, err
@@ -234,7 +233,8 @@ func (s *Service) PutSoul(ctx context.Context, id, content string) (Template, er
 	if err != nil {
 		return Template{}, err
 	}
-	if err := s.store.WriteSoul(template, content); err != nil {
+	template, err = s.repository.UpdateSoulContent(ctx, template.ID, content)
+	if err != nil {
 		return Template{}, err
 	}
 	return s.refreshChecksum(ctx, template)
@@ -245,7 +245,7 @@ func (s *Service) Soul(ctx context.Context, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.store.ReadSoul(template)
+	return template.SoulContent, nil
 }
 
 func (s *Service) PutUser(ctx context.Context, id, content string) (Template, error) {
@@ -253,7 +253,8 @@ func (s *Service) PutUser(ctx context.Context, id, content string) (Template, er
 	if err != nil {
 		return Template{}, err
 	}
-	if err := s.store.WriteUser(template, content); err != nil {
+	template, err = s.repository.UpdateUserContent(ctx, template.ID, content)
+	if err != nil {
 		return Template{}, err
 	}
 	return s.refreshChecksum(ctx, template)
@@ -264,7 +265,7 @@ func (s *Service) User(ctx context.Context, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.store.ReadUser(template)
+	return template.UserContent, nil
 }
 
 func (s *Service) ListSkills(ctx context.Context, templateID string) ([]Skill, error) {
@@ -490,8 +491,8 @@ func (s *Service) ensureDraft(ctx context.Context, template Template) (Template,
 		Version:         nextVersion,
 		TemplatePath:    paths.TemplatePath,
 		ContentChecksum: template.ContentChecksum,
-		SoulMDPath:      paths.SoulMDPath,
-		UserMDPath:      paths.UserMDPath,
+		SoulContent:     template.SoulContent,
+		UserContent:     template.UserContent,
 		SkillsPath:      paths.SkillsPath,
 		CreatedBy:       template.CreatedBy,
 	}
@@ -537,15 +538,11 @@ func (s *Service) refreshChecksum(ctx context.Context, template Template) (Templ
 }
 
 func (s *Service) validatePublishable(ctx context.Context, template Template) error {
-	soul, err := s.store.ReadSoul(template)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
+	if strings.TrimSpace(template.SoulContent) == "" {
+		return fmt.Errorf("%w: SOUL.md is empty", ErrInvalidTemplate)
 	}
-	if strings.TrimSpace(soul) == "" {
-		return ErrInvalidTemplate
-	}
-	if _, err := os.Stat(template.UserMDPath); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
+	if strings.TrimSpace(template.UserContent) == "" {
+		return fmt.Errorf("%w: USER.md is empty", ErrInvalidTemplate)
 	}
 	skillDirs, err := os.ReadDir(template.SkillsPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

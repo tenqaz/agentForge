@@ -94,7 +94,7 @@ func TestServiceCreateCreatesAgentAndProvisionJob(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, nil, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir(), "docker")
 	ctx := context.Background()
 
 	created, err := service.Create(ctx, CreateParams{
@@ -140,16 +140,15 @@ func TestServiceCreateRejectsNonPublishedTemplates(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, nil, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir(), "docker")
 	ctx := context.Background()
 
 	for _, status := range []string{"draft", "archived"} {
 		if _, err := database.ExecContext(ctx, `
 			INSERT INTO agent_templates (
 				id, name, description, status, version, template_path, content_checksum,
-				soul_md_path, user_md_path, skills_path, created_by
-			) VALUES (?, 'Hidden template', '', ?, 1, '/tmp/hidden', 'checksum', '/tmp/hidden/SOUL.md',
-				'/tmp/hidden/USER.md', '/tmp/hidden/skills', 'admin-1');
+				soul_content, user_content, skills_path, created_by
+			) VALUES (?, 'Hidden template', '', ?, 1, '/tmp/hidden', 'checksum', '', '', '/tmp/hidden/skills', 'admin-1');
 		`, "template-"+status, status); err != nil {
 			t.Fatalf("insert %s template: %v", status, err)
 		}
@@ -169,7 +168,7 @@ func TestServiceCreateRuntimeJobRejectsUnavailableRuntime(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	jobRepository := jobs.NewRuntimeRepository(database)
-	service := NewService(database, repository, jobRepository, nil, t.TempDir())
+	service := NewService(database, repository, jobRepository, nil, t.TempDir(), "docker")
 	ctx := context.Background()
 	insertAgentFixture(t, database, "agent-1", "user-1", StatusCreating)
 
@@ -221,8 +220,8 @@ func newAgentsTestDB(t *testing.T) *sql.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			template_path TEXT NOT NULL,
 			content_checksum TEXT NOT NULL,
-			soul_md_path TEXT NOT NULL,
-			user_md_path TEXT NOT NULL,
+			soul_content TEXT NOT NULL DEFAULT '',
+			user_content TEXT NOT NULL DEFAULT '',
 			skills_path TEXT NOT NULL,
 			created_by TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -275,11 +274,10 @@ func newAgentsTestDB(t *testing.T) *sql.DB {
 		       ('admin-1', 'admin@example.com', 'unused', 'admin');
 		INSERT INTO agent_templates (
 			id, name, description, status, version, template_path, content_checksum,
-			soul_md_path, user_md_path, skills_path, created_by
+			soul_content, user_content, skills_path, created_by
 		) VALUES (
 			'template-1', 'Support', 'Published template', 'published', 3,
-			'/tmp/template-1', 'checksum', '/tmp/template-1/SOUL.md',
-			'/tmp/template-1/USER.md', '/tmp/template-1/skills', 'admin-1'
+			'/tmp/template-1', 'checksum', '', '', '/tmp/template-1/skills', 'admin-1'
 		);
 	`)
 	if err != nil {

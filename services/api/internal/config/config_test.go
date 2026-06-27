@@ -111,3 +111,37 @@ func TestLoadUsesDefaultsWithoutDotEnv(t *testing.T) {
 		t.Fatalf("HermesCPUs = %q", cfg.HermesCPUs)
 	}
 }
+
+func TestLoadReadsBrevoSettings(t *testing.T) {
+	t.Setenv("AGENTFORGE_BREVO_API_KEY", "test-key")
+	t.Setenv("AGENTFORGE_BREVO_SENDER_EMAIL", "noreply@example.com")
+	t.Setenv("AGENTFORGE_BREVO_SENDER_NAME", "AgentForge")
+	t.Setenv("AGENTFORGE_BREVO_BASE_URL", "")
+	t.Setenv("AGENTFORGE_HTTP_ADDR", "")
+	t.Setenv("AGENTFORGE_PUBLIC_BASE_URL", "")
+	t.Setenv("AGENTFORGE_DATA_DIR", "")
+	t.Setenv("AGENTFORGE_SESSION_SECRET", "")
+	t.Setenv("AGENTFORGE_HERMES_IMAGE", "")
+	t.Setenv("AGENTFORGE_HERMES_MEMORY", "")
+	t.Setenv("AGENTFORGE_HERMES_CPUS", "")
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BrevoAPIKey != "test-key" {
+		t.Fatalf("BrevoAPIKey = %q", cfg.BrevoAPIKey)
+	}
+	if cfg.BrevoSenderEmail != "noreply@example.com" {
+		t.Fatalf("BrevoSenderEmail = %q", cfg.BrevoSenderEmail)
+	}
+	if cfg.BrevoSenderName != "AgentForge" {
+		t.Fatalf("BrevoSenderName = %q", cfg.BrevoSenderName)
+	}
+	if cfg.BrevoBaseURL != "https://api.brevo.com" {
+		t.Fatalf("BrevoBaseURL = %q, want default", cfg.BrevoBaseURL)
+	}
+}

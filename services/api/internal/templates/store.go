@@ -23,8 +23,6 @@ type FileStore struct {
 
 type TemplatePaths struct {
 	TemplatePath string
-	SoulMDPath   string
-	UserMDPath   string
 	SkillsPath   string
 }
 
@@ -36,8 +34,6 @@ func (s *FileStore) Paths(templateID string, version int) TemplatePaths {
 	versionDir := filepath.Join(s.dataDir, "templates", templateID, "versions", strconv.Itoa(version))
 	return TemplatePaths{
 		TemplatePath: versionDir,
-		SoulMDPath:   filepath.Join(versionDir, "SOUL.md"),
-		UserMDPath:   filepath.Join(versionDir, "USER.md"),
 		SkillsPath:   filepath.Join(versionDir, "skills"),
 	}
 }
@@ -55,32 +51,10 @@ func (s *FileStore) CopyTemplateVersion(source Template, targetID string, target
 	if err != nil {
 		return TemplatePaths{}, err
 	}
-	if err := copyFileIfExists(source.SoulMDPath, targetPaths.SoulMDPath); err != nil {
-		return TemplatePaths{}, err
-	}
-	if err := copyFileIfExists(source.UserMDPath, targetPaths.UserMDPath); err != nil {
-		return TemplatePaths{}, err
-	}
 	if err := copyDirIfExists(source.SkillsPath, targetPaths.SkillsPath); err != nil {
 		return TemplatePaths{}, err
 	}
 	return targetPaths, nil
-}
-
-func (s *FileStore) WriteSoul(template Template, content string) error {
-	return writeFile(template.SoulMDPath, content)
-}
-
-func (s *FileStore) ReadSoul(template Template) (string, error) {
-	return readFile(template.SoulMDPath)
-}
-
-func (s *FileStore) WriteUser(template Template, content string) error {
-	return writeFile(template.UserMDPath, content)
-}
-
-func (s *FileStore) ReadUser(template Template) (string, error) {
-	return readFile(template.UserMDPath)
 }
 
 func (s *FileStore) WriteSkill(template Template, skillName, content string) (string, error) {
@@ -293,15 +267,25 @@ func (s *FileStore) DeleteTemplate(template Template) error {
 
 func (s *FileStore) Checksum(template Template) (string, error) {
 	hash := sha256.New()
-	if _, err := os.Stat(template.TemplatePath); err != nil {
+
+	writeField := func(name, content string) {
+		hash.Write([]byte(name))
+		hash.Write([]byte{0})
+		hash.Write([]byte(content))
+		hash.Write([]byte{0})
+	}
+	writeField("SOUL.md", template.SoulContent)
+	writeField("USER.md", template.UserContent)
+
+	if _, err := os.Stat(template.SkillsPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return checksumString(""), nil
+			return hex.EncodeToString(hash.Sum(nil)), nil
 		}
 		return "", err
 	}
 
 	var files []string
-	if err := filepath.WalkDir(template.TemplatePath, func(path string, entry os.DirEntry, err error) error {
+	if err := filepath.WalkDir(template.SkillsPath, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -315,16 +299,12 @@ func (s *FileStore) Checksum(template Template) (string, error) {
 	}
 	sort.Strings(files)
 	for _, path := range files {
-		relative, err := filepath.Rel(template.TemplatePath, path)
+		relative, err := filepath.Rel(template.SkillsPath, path)
 		if err != nil {
 			return "", err
 		}
-		if _, err := hash.Write([]byte(relative)); err != nil {
-			return "", err
-		}
-		if _, err := hash.Write([]byte{0}); err != nil {
-			return "", err
-		}
+		hash.Write([]byte("skills/" + relative))
+		hash.Write([]byte{0})
 		file, err := os.Open(path)
 		if err != nil {
 			return "", err
@@ -336,9 +316,7 @@ func (s *FileStore) Checksum(template Template) (string, error) {
 		if err := file.Close(); err != nil {
 			return "", err
 		}
-		if _, err := hash.Write([]byte{0}); err != nil {
-			return "", err
-		}
+		hash.Write([]byte{0})
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }

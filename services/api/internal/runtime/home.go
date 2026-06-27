@@ -36,10 +36,12 @@ func (c ProviderConfig) GoString() string {
 }
 
 type HomeSpec struct {
-	AgentID  string
-	HomePath string
-	Template templates.Template
-	Provider ProviderConfig
+	AgentID     string
+	HomePath    string
+	Template    templates.Template
+	SoulContent string
+	UserContent string
+	Provider    ProviderConfig
 }
 
 type HomeResult struct {
@@ -120,11 +122,11 @@ func (homeBuilder) Provision(ctx context.Context, spec HomeSpec) (HomeResult, er
 		return HomeResult{}, NewProvisionError(ErrCodeConfigWriteFailed, "failed to create Hermes home layout", err)
 	}
 
-	if err := copyFile(spec.Template.SoulMDPath, result.SoulPath); err != nil {
-		return HomeResult{}, NewProvisionError(ErrCodeCopyTemplateFailed, "failed to copy SOUL.md", err)
+	if err := writeTextFile(result.SoulPath, spec.SoulContent); err != nil {
+		return HomeResult{}, NewProvisionError(ErrCodeCopyTemplateFailed, "failed to write SOUL.md", err)
 	}
-	if err := copyFile(spec.Template.UserMDPath, result.UserPath); err != nil {
-		return HomeResult{}, NewProvisionError(ErrCodeCopyTemplateFailed, "failed to copy USER.md", err)
+	if err := writeTextFile(result.UserPath, spec.UserContent); err != nil {
+		return HomeResult{}, NewProvisionError(ErrCodeCopyTemplateFailed, "failed to write USER.md", err)
 	}
 	if err := copyDir(spec.Template.SkillsPath, result.SkillsPath); err != nil {
 		return HomeResult{}, NewProvisionError(ErrCodeCopyTemplateFailed, "failed to copy skills", err)

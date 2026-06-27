@@ -265,7 +265,7 @@ func TestDeletePublicationRejectsNonPublishedTemplate(t *testing.T) {
 		t.Fatalf("draft unpublish status = %d, body = %s", draftRecorder.Code, draftRecorder.Body.String())
 	}
 
-	archiveRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID, nil)
+	archiveRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/templates/"+templateID+"/archive", nil)
 	archiveRequest.AddCookie(adminCookie)
 	archiveRecorder := httptest.NewRecorder()
 	router.ServeHTTP(archiveRecorder, archiveRequest)
@@ -548,8 +548,8 @@ func newTemplateHTTPTestDB(t *testing.T) *sql.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			template_path TEXT NOT NULL,
 			content_checksum TEXT NOT NULL,
-			soul_md_path TEXT NOT NULL,
-			user_md_path TEXT NOT NULL,
+			soul_content TEXT NOT NULL DEFAULT '',
+			user_content TEXT NOT NULL DEFAULT '',
 			skills_path TEXT NOT NULL,
 			created_by TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
