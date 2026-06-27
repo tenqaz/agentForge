@@ -120,6 +120,10 @@ func publicMessageForCode(code string) string {
 		return "email code attempts exhausted"
 	case "email_send_failed":
 		return "email send failed"
+	case "turnstile_required":
+		return "turnstile token required"
+	case "turnstile_invalid":
+		return "turnstile token invalid"
 	default:
 		return "internal error"
 	}

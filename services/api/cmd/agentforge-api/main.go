@@ -21,6 +21,7 @@ import (
 	"agentforge.local/services/api/internal/jobs"
 	"agentforge.local/services/api/internal/runtime"
 	"agentforge.local/services/api/internal/templates"
+	"agentforge.local/services/api/internal/turnstile"
 	"agentforge.local/services/api/internal/verification"
 	"agentforge.local/services/api/internal/weixin"
 )
@@ -76,29 +77,29 @@ func run() error {
 	agentRepo := agents.NewRepository(database)
 	templateService := templates.NewService(templateRepo, templateStore, agentRepo)
 	var runner runtime.Runner
-		switch cfg.RunnerMode {
-		case "eci":
-			eciRunner, err := runtime.NewECIRunner(runtime.ECIConfig{
-				Region:           cfg.ECIRegion,
-				AccessKeyID:      cfg.ECIAccessKeyID,
-				AccessKeySecret:  cfg.ECIAccessKeySecret,
-				SecurityGroupID:  cfg.ECISecurityGroupID,
-				VSwitchID:        cfg.ECIVSwitchID,
-				ImageCacheID:     cfg.ECIImageCacheID,
-				EIPInstanceID:    cfg.ECIEIPInstanceID,
-				NASHost:          cfg.ECINASHost,
-				NASPath:          cfg.ECINASPath,
-				NASFileSystemID:  cfg.ECINASFileSystemID,
-			})
-			if err != nil {
-				return fmt.Errorf("eci runner: %w", err)
-			}
-			runner = eciRunner
-			slog.Info("Using ECI runner", "region", cfg.ECIRegion)
-		default:
-			runner = runtime.NewDockerRunner(cfg.DockerBin, cfg.DockerAgentsVolume)
-			slog.Info("Using Docker runner")
+	switch cfg.RunnerMode {
+	case "eci":
+		eciRunner, err := runtime.NewECIRunner(runtime.ECIConfig{
+			Region:          cfg.ECIRegion,
+			AccessKeyID:     cfg.ECIAccessKeyID,
+			AccessKeySecret: cfg.ECIAccessKeySecret,
+			SecurityGroupID: cfg.ECISecurityGroupID,
+			VSwitchID:       cfg.ECIVSwitchID,
+			ImageCacheID:    cfg.ECIImageCacheID,
+			EIPInstanceID:   cfg.ECIEIPInstanceID,
+			NASHost:         cfg.ECINASHost,
+			NASPath:         cfg.ECINASPath,
+			NASFileSystemID: cfg.ECINASFileSystemID,
+		})
+		if err != nil {
+			return fmt.Errorf("eci runner: %w", err)
 		}
+		runner = eciRunner
+		slog.Info("Using ECI runner", "region", cfg.ECIRegion)
+	default:
+		runner = runtime.NewDockerRunner(cfg.DockerBin, cfg.DockerAgentsVolume)
+		slog.Info("Using Docker runner")
+	}
 	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
@@ -155,10 +156,23 @@ func run() error {
 	)
 	verificationService := verification.NewService(verificationStore, verificationMailer, nil)
 
+	turnstileSvc := turnstile.NewVerifier(
+		cfg.TurnstileSecret,
+		cfg.TurnstileSitekey,
+		cfg.TurnstileExpectedHostname,
+		cfg.TurnstileVerifyURL,
+		nil,
+	)
+	if cfg.TurnstileSecret != "" && cfg.TurnstileSitekey == "" {
+		slog.Warn("Turnstile secret set but sitekey empty; login will be rejected by frontend",
+			"secret_set", cfg.TurnstileSecret != "", "sitekey_set", cfg.TurnstileSitekey != "")
+	}
+
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		AuthRepository:       authRepo,
 		SessionManager:       sessionManager,
 		VerificationService:  verificationService,
+		Turnstile:            turnstileSvc,
 		TemplateService:      templateService,
 		AgentService:         agentService,
 		RuntimeJobRepository: runtimeJobs,

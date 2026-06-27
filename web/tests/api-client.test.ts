@@ -60,6 +60,7 @@ describe("createApiClient", () => {
           email: "user@example.com",
           password: "abc12345",
           emailCode: "123456",
+          turnstileToken: "tok",
         }),
       );
       return new Response(JSON.stringify({ error: "email_already_exists" }), {
@@ -73,6 +74,7 @@ describe("createApiClient", () => {
       email: "user@example.com",
       password: "abc12345",
       emailCode: "123456",
+      turnstileToken: "tok",
     });
 
     expect(response.ok).toBe(false);
@@ -89,7 +91,7 @@ describe("createApiClient", () => {
       const url = typeof input === "string" ? input : String(input);
       expect(url).toBe("http://example.test/api/registration/email-codes");
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ email: "user@example.com" }));
+      expect(init?.body).toBe(JSON.stringify({ email: "user@example.com", turnstileToken: "tok" }));
       return new Response(JSON.stringify({ error: "email_code_cooldown" }), {
         status: 429,
         headers: {
@@ -100,7 +102,7 @@ describe("createApiClient", () => {
     });
     const client = createApiClient({ fetchImpl, baseUrl: "http://example.test" });
 
-    const response = await sendRegistrationEmailCode(client, { email: "user@example.com" });
+    const response = await sendRegistrationEmailCode(client, { email: "user@example.com", turnstileToken: "tok" });
 
     expect(response.ok).toBe(false);
     if (response.ok) {

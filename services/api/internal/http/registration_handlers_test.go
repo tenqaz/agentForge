@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"agentforge.local/services/api/internal/auth"
+	"agentforge.local/services/api/internal/turnstile"
 	"agentforge.local/services/api/internal/verification"
 	"github.com/gin-gonic/gin"
 )
@@ -30,8 +31,11 @@ func (m *testVerificationMailer) SendRegistrationCode(_ context.Context, email, 
 }
 
 // newRegistrationTestRouter 装配带验证码服务的注册路由，返回路由与捕获验证码的 mailer。
-func newRegistrationTestRouter(t *testing.T, database *sql.DB) (*gin.Engine, *testVerificationMailer) {
+func newRegistrationTestRouter(t *testing.T, database *sql.DB, svc *turnstile.Service) (*gin.Engine, *testVerificationMailer) {
 	t.Helper()
+	if svc == nil {
+		svc = turnstile.NewVerifier("", "", "", "", nil)
+	}
 	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
 	mailer := &testVerificationMailer{}
 	service := verification.NewService(
@@ -43,6 +47,7 @@ func newRegistrationTestRouter(t *testing.T, database *sql.DB) (*gin.Engine, *te
 		AuthRepository:      auth.NewRepository(database),
 		SessionManager:      auth.NewSessionManager("test-secret", false),
 		VerificationService: service,
+		Turnstile:           svc,
 	})
 	return router, mailer
 }
@@ -64,7 +69,7 @@ func registerRequest(email, password, code string) *http.Request {
 
 func TestRegistrationRouteSendsEmailCodeAndReturnsAccepted(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, mailer := newRegistrationTestRouter(t, database)
+	router, mailer := newRegistrationTestRouter(t, database, nil)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/registration/email-codes",
@@ -83,7 +88,7 @@ func TestRegistrationRouteSendsEmailCodeAndReturnsAccepted(t *testing.T) {
 
 func TestRegistrationRouteSendCodeRejectsInvalidEmail(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, _ := newRegistrationTestRouter(t, database)
+	router, _ := newRegistrationTestRouter(t, database, nil)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/registration/email-codes",
@@ -149,7 +154,7 @@ func TestRegistrationRouteSendCodeRejectsAlreadyRegisteredEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	router, mailer := newRegistrationTestRouter(t, database)
+	router, mailer := newRegistrationTestRouter(t, database, nil)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/registration/email-codes",
@@ -172,7 +177,7 @@ func TestRegistrationRouteSendCodeRejectsAlreadyRegisteredEmail(t *testing.T) {
 
 func TestRegistrationRouteRejectsMissingEmailCode(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, _ := newRegistrationTestRouter(t, database)
+	router, _ := newRegistrationTestRouter(t, database, nil)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, registerRequest("user@example.com", "abc12345", ""))
@@ -191,7 +196,7 @@ func TestRegistrationRouteRejectsMissingEmailCode(t *testing.T) {
 
 func TestRegistrationRouteCreatesUserWithoutSessionCookie(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, mailer := newRegistrationTestRouter(t, database)
+	router, mailer := newRegistrationTestRouter(t, database, nil)
 
 	sendTestEmailCode(t, router, "  USER@example.com ")
 	code := mailer.lastCode
@@ -235,7 +240,7 @@ func TestRegistrationRouteCreatesUserWithoutSessionCookie(t *testing.T) {
 
 func TestRegistrationRouteRejectsWeakPassword(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, mailer := newRegistrationTestRouter(t, database)
+	router, mailer := newRegistrationTestRouter(t, database, nil)
 
 	sendTestEmailCode(t, router, "user@example.com")
 	code := mailer.lastCode
@@ -260,7 +265,7 @@ func TestRegistrationRouteRejectsWeakPassword(t *testing.T) {
 
 func TestRegistrationRouteRejectsDuplicateEmail(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, mailer := newRegistrationTestRouter(t, database)
+	router, mailer := newRegistrationTestRouter(t, database, nil)
 
 	sendTestEmailCode(t, router, "user@example.com")
 	code := mailer.lastCode
@@ -309,7 +314,7 @@ func TestRegistrationRouteRejectsDuplicateEmail(t *testing.T) {
 
 func TestRegistrationRouteEmailCodeCooldownReturnsRetryAfter(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, _ := newRegistrationTestRouter(t, database)
+	router, _ := newRegistrationTestRouter(t, database, nil)
 
 	first := httptest.NewRecorder()
 	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/api/registration/email-codes", bytes.NewBufferString(`{"email":"user@example.com"}`)))
@@ -378,7 +383,7 @@ func TestRegistrationRouteEmailCodeRateLimitedReturnsRetryAfter(t *testing.T) {
 
 func TestRegistrationRouteRejectsInvalidAndTrailingJSON(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, _ := newRegistrationTestRouter(t, database)
+	router, _ := newRegistrationTestRouter(t, database, nil)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/users", bytes.NewBufferString(`{"email":"user@example.com","password":"abc12345"`))
@@ -463,7 +468,7 @@ func TestRegistrationRouteRejectsExpiredEmailCode(t *testing.T) {
 
 func TestRegistrationRouteRejectsExhaustedEmailCode(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, mailer := newRegistrationTestRouter(t, database)
+	router, mailer := newRegistrationTestRouter(t, database, nil)
 
 	sendTestEmailCode(t, router, "user@example.com")
 	code := mailer.lastCode
@@ -494,7 +499,7 @@ func TestRegistrationRouteRejectsExhaustedEmailCode(t *testing.T) {
 
 func TestRegistrationRouteNormalizesStoredEmail(t *testing.T) {
 	database := newHTTPTestDB(t)
-	router, mailer := newRegistrationTestRouter(t, database)
+	router, mailer := newRegistrationTestRouter(t, database, nil)
 
 	// 用带空格与大写的邮箱发码；服务内部归一化存储。
 	sendTestEmailCode(t, router, "  USER@example.com ")
@@ -514,5 +519,31 @@ func TestRegistrationRouteNormalizesStoredEmail(t *testing.T) {
 	}
 	if response.User.Email != "user@example.com" {
 		t.Fatalf("stored email = %q, want normalized user@example.com", response.User.Email)
+	}
+}
+
+func TestSendEmailCodeRequiresTurnstileWhenEnabled(t *testing.T) {
+	database := newHTTPTestDB(t)
+	svc := turnstile.NewVerifier("sec", "site", "", "", nil)
+	router, _ := newRegistrationTestRouter(t, database, svc)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/registration/email-codes",
+		bytes.NewBufferString(`{"email":"user@example.com"}`)))
+	if recorder.Code != http.StatusBadRequest || !bytes.Contains(recorder.Body.Bytes(), []byte("turnstile_required")) {
+		t.Fatalf("status = %d, body = %s, want 400 turnstile_required", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRegisterRequiresTurnstileWhenEnabled(t *testing.T) {
+	database := newHTTPTestDB(t)
+	svc := turnstile.NewVerifier("sec", "site", "", "", nil)
+	router, _ := newRegistrationTestRouter(t, database, svc)
+
+	// 即便带了正确 emailCode，缺 turnstileToken 仍被 400 拦截。
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, registerRequest("user@example.com", "abc12345", "123456"))
+	if recorder.Code != http.StatusBadRequest || !bytes.Contains(recorder.Body.Bytes(), []byte("turnstile_required")) {
+		t.Fatalf("status = %d, body = %s, want 400 turnstile_required", recorder.Code, recorder.Body.String())
 	}
 }

@@ -7,13 +7,15 @@ import {
   useEffect,
   useState,
   useSyncExternalStore,
+  useRef,
   type FormEvent,
 } from "react";
 import { ArrowRight, Check, Lock, Mail } from "lucide-react";
 
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import { signInWithPassword } from "@/app/login/actions";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage, getTurnstileConfig, type TurnstileConfigResponse } from "@/lib/api";
+import { Turnstile, type TurnstileHandle } from "@/components/turnstile";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import AuthSplit from "@/components/ui/auth-split";
@@ -40,7 +42,16 @@ function LoginPageInner() {
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileCfg, setTurnstileCfg] = useState<TurnstileConfigResponse | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
   const registered = searchParams.get("registered") === "1";
+
+  useEffect(() => {
+    getTurnstileConfig(apiClient).then((resp) => {
+      if (resp.ok) setTurnstileCfg(resp.data);
+    });
+  }, [apiClient]);
 
   useEffect(() => {
     if (loading) {
@@ -57,12 +68,22 @@ function LoginPageInner() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (turnstileCfg?.enabled && turnstileCfg.sitekey && !turnstileToken) {
+      setError("请完成人机验证后重试。");
+      return;
+    }
+
     setPending(true);
     setError("");
 
-    const response = await signInWithPassword(apiClient, email.trim(), password);
+    const response = await signInWithPassword(apiClient, email.trim(), password, turnstileToken);
     if (!response.ok) {
       setError(apiErrorMessage(response.error.code, response.error.message));
+      if (response.error.code === "turnstile_invalid") {
+        turnstileRef.current?.reset();
+        setTurnstileToken("");
+      }
       setPending(false);
       return;
     }
@@ -191,6 +212,17 @@ function LoginPageInner() {
           >
             {error}
           </div>
+        ) : null}
+
+        {turnstileCfg?.enabled && turnstileCfg.sitekey ? (
+          <Turnstile
+            ref={turnstileRef}
+            sitekey={turnstileCfg.sitekey}
+            action="login"
+            onToken={setTurnstileToken}
+            onExpire={() => setTurnstileToken("")}
+            onError={() => setTurnstileToken("")}
+          />
         ) : null}
 
         <Button

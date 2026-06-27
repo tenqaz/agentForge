@@ -11,9 +11,12 @@ Request:
 ```json
 {
   "email": "user@example.com",
-  "password": "secret-password"
+  "password": "secret-password",
+  "turnstileToken": "<token-from-turnstile-widget>"
 }
 ```
+
+- `turnstileToken`: Turnstile widget response token (string, required when Turnstile is enabled)
 
 Response `200`:
 
@@ -34,6 +37,89 @@ Return the current authenticated user from the session cookie.
 ### `DELETE /api/session`
 
 Clear the session cookie.
+
+## Registration
+
+### `POST /api/registration/email-codes`
+
+Send a registration verification code to an email address.
+
+Request:
+
+```json
+{
+  "email": "user@example.com",
+  "turnstileToken": "<token-from-turnstile-widget>"
+}
+```
+
+- `turnstileToken`: Turnstile widget response token (string, required when Turnstile is enabled)
+
+Response `202 Accepted`:
+
+```json
+{ "ok": true }
+```
+
+Error codes:
+- `email_already_exists` (409): email already registered
+- `email_code_cooldown` (429): too many requests, cooldown period active
+- `email_code_rate_limited` (429): rate limited
+- `email_send_failed` (500): failed to send email
+
+### `POST /api/users`
+
+Create a new user with a valid email verification code.
+
+Request:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "secret-password",
+  "emailCode": "123456",
+  "turnstileToken": "<token-from-turnstile-widget>"
+}
+```
+
+- `turnstileToken`: Turnstile widget response token (string, required when Turnstile is enabled)
+
+Response `201 Created`:
+
+```json
+{
+  "user": {
+    "id": "user-1",
+    "email": "user@example.com",
+    "role": "user"
+  }
+}
+```
+
+Error codes:
+- `email_code_required` (400): email code missing
+- `email_code_expired` (400): email code expired
+- `email_code_attempts_exhausted` (400): too many failed attempts
+- `email_code_invalid` (400): invalid email code
+- `email_already_exists` (409): email already registered
+- `invalid_password` (400): invalid password
+
+## Turnstile
+
+### `GET /api/turnstile/config`
+
+Public endpoint (no authentication required). Returns configuration for rendering the Turnstile widget in the frontend.
+
+Response `200`:
+
+```json
+{ "sitekey": "<sitekey-or-empty>", "enabled": true }
+```
+
+- `enabled`: Whether the backend has Turnstile secret configured
+- `sitekey`: Sitekey for the frontend (empty string if not configured)
+
+This endpoint itself does not require Turnstile verification.
 
 ## Health
 
@@ -247,6 +333,11 @@ Typical response codes:
 - `404 not_found`
 - `409 conflict`
 - `400 invalid_request`
+
+Important 400 error codes:
+
+- `turnstile_required`: Turnstile token is required but not provided
+- `turnstile_invalid`: Turnstile token is invalid or expired
 
 Important conflict cases:
 

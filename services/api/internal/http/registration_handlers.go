@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"agentforge.local/services/api/internal/auth"
+	"agentforge.local/services/api/internal/turnstile"
 	"agentforge.local/services/api/internal/verification"
 	"github.com/gin-gonic/gin"
 )
@@ -14,10 +15,15 @@ import (
 type RegistrationHandlers struct {
 	authRepository      AuthRepository
 	verificationService VerificationService
+	turnstile           turnstile.Verifier
 }
 
-func NewRegistrationHandlers(authRepository AuthRepository, verificationService VerificationService) *RegistrationHandlers {
-	return &RegistrationHandlers{authRepository: authRepository, verificationService: verificationService}
+func NewRegistrationHandlers(authRepository AuthRepository, verificationService VerificationService, t *turnstile.Service) *RegistrationHandlers {
+	var v turnstile.Verifier = turnstile.DisabledVerifier{}
+	if t != nil {
+		v = t.Verifier
+	}
+	return &RegistrationHandlers{authRepository: authRepository, verificationService: verificationService, turnstile: v}
 }
 
 // normalizeEmail 去除首尾空白并转为小写，保证发码查重、校验、建号、消费使用同一邮箱键。
@@ -34,9 +40,13 @@ func (h *RegistrationHandlers) Register(router gin.IRoutes) {
 // 已注册邮箱直接返回冲突，避免浪费发信额度。
 func (h *RegistrationHandlers) SendEmailCode(c *gin.Context) {
 	var request struct {
-		Email string `json:"email"`
+		Email          string `json:"email"`
+		TurnstileToken string `json:"turnstileToken"`
 	}
 	if !decodeRequest(c, &request) {
+		return
+	}
+	if !requireTurnstile(c, h.turnstile, request.TurnstileToken, "register") {
 		return
 	}
 	normalized := normalizeEmail(request.Email)
@@ -78,11 +88,15 @@ func (h *RegistrationHandlers) SendEmailCode(c *gin.Context) {
 // 避免创建失败时误损失验证码。
 func (h *RegistrationHandlers) Create(c *gin.Context) {
 	var request struct {
-		Email     string `json:"email"`
-		Password  string `json:"password"`
-		EmailCode string `json:"emailCode"`
+		Email          string `json:"email"`
+		Password       string `json:"password"`
+		EmailCode      string `json:"emailCode"`
+		TurnstileToken string `json:"turnstileToken"`
 	}
 	if !decodeRequest(c, &request) {
+		return
+	}
+	if !requireTurnstile(c, h.turnstile, request.TurnstileToken, "register") {
 		return
 	}
 	if strings.TrimSpace(request.EmailCode) == "" {
