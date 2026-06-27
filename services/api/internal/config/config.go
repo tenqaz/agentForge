@@ -67,12 +67,6 @@ type Config struct {
 	IdleHeartbeatMisses     int
 	WakeHeartbeatTimeoutSec int
 
-	// Brevo 事务邮件配置
-	BrevoAPIKey      string
-	BrevoSenderEmail string
-	BrevoSenderName  string
-	BrevoBaseURL     string
-
 	// Brevo 事务邮件配置，用于发送注册验证码邮件。全部可选；未配置 API key 或
 	// 发件人邮箱时，发码端点在运行时返回 email_send_failed（500），不影响启动。
 	BrevoAPIKey      string
@@ -128,22 +122,18 @@ func Load() (Config, error) {
 		ECINASFileSystemID: value("AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID", dotEnv, ""),
 
 
-tttAutoSleepEnabled:        boolValue("AGENTFORGE_AUTO_SLEEP_ENABLED", dotEnv, false),
-tttIdleTimeoutMinutes:      intValue("AGENTFORGE_IDLE_TIMEOUT", dotEnv, 10),
-tttSleepPollIntervalSec:    intValue("AGENTFORGE_SLEEP_POLL_INTERVAL", dotEnv, 5),
-tttIdleCheckIntervalSec:    intValue("AGENTFORGE_IDLE_CHECK_INTERVAL", dotEnv, 60),
-tttIdleHeartbeatMisses:     intValue("AGENTFORGE_IDLE_HEARTBEAT_MISSES", dotEnv, 3),
-tttWakeHeartbeatTimeoutSec: intValue("AGENTFORGE_WAKE_HEARTBEAT_TIMEOUT", dotEnv, 60),
+			AutoSleepEnabled:        boolValue("AGENTFORGE_AUTO_SLEEP_ENABLED", dotEnv, false),
+			IdleTimeoutMinutes:      intValue("AGENTFORGE_IDLE_TIMEOUT", dotEnv, 10),
+			SleepPollIntervalSec:    intValue("AGENTFORGE_SLEEP_POLL_INTERVAL", dotEnv, 5),
+			IdleCheckIntervalSec:    intValue("AGENTFORGE_IDLE_CHECK_INTERVAL", dotEnv, 60),
+			IdleHeartbeatMisses:     intValue("AGENTFORGE_IDLE_HEARTBEAT_MISSES", dotEnv, 3),
+			WakeHeartbeatTimeoutSec: intValue("AGENTFORGE_WAKE_HEARTBEAT_TIMEOUT", dotEnv, 60),
 
 			BrevoAPIKey:      value("AGENTFORGE_BREVO_API_KEY", dotEnv, ""),
 			BrevoSenderEmail: value("AGENTFORGE_BREVO_SENDER_EMAIL", dotEnv, ""),
 			BrevoSenderName:  value("AGENTFORGE_BREVO_SENDER_NAME", dotEnv, ""),
 			BrevoBaseURL:     value("AGENTFORGE_BREVO_BASE_URL", dotEnv, "https://api.brevo.com"),
 
-tttBrevoAPIKey:      value("AGENTFORGE_BREVO_API_KEY", dotEnv, ""),
-tttBrevoSenderEmail: value("AGENTFORGE_BREVO_SENDER_EMAIL", dotEnv, ""),
-tttBrevoSenderName:  value("AGENTFORGE_BREVO_SENDER_NAME", dotEnv, ""),
-tttBrevoBaseURL:     value("AGENTFORGE_BREVO_BASE_URL", dotEnv, "https://api.brevo.com"),
 	}, nil
 }
 
