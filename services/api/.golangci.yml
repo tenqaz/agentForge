@@ -1,4 +1,4 @@
-version: 2
+version: "2"
 
 run:
   timeout: 5m
@@ -17,14 +17,20 @@ linters:
     - gosec
     - bodyclose
     - nilerr
-
-linters-settings:
-  errcheck:
-    check-blank: true
-  gosec:
-    excludes:
-      - G124  # Cookie 属性测试
-      - G304  # 文件包含
+  settings:
+    errcheck:
+      check-blank: true
+    gosec:
+      excludes:
+        - G124
+        - G304
+  exclusions:
+    rules:
+      - path: '_test\.go'
+        linters:
+          - gosec
+          - unparam
+          - unused
 
 formatters:
   enable:
@@ -34,9 +40,3 @@ formatters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - unparam
-        - unused
