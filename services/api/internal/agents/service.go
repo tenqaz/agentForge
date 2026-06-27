@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -236,7 +237,9 @@ func (s *Service) Sleep(ctx context.Context, agentID string) error {
 	}
 
 	// Clean up heartbeat so a stale file doesn't fool the next Wake.
-	_ = os.Remove(filepath.Join(agent.HermesHomePath, ".heartbeat"))
+	if err := os.Remove(filepath.Join(agent.HermesHomePath, ".heartbeat")); err != nil && !os.IsNotExist(err) {
+		slog.Warn("sleep: remove heartbeat", "agent", agentID, "error", err)
+	}
 
 	if _, err := s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", ""); err != nil {
 		return fmt.Errorf("sleep: transition to sleeping: %w", err)
@@ -270,7 +273,9 @@ func (s *Service) Wake(ctx context.Context, agentID string) error {
 		CPUs:       s.hermesCPUs,
 	}); err != nil {
 		// Start failed — go back to sleeping so SleepPoller retries.
-		_, _ = s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", "")
+		if _, rollbackErr := s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", ""); rollbackErr != nil {
+			slog.Error("wake: rollback to sleeping failed", "agent", agentID, "error", rollbackErr)
+		}
 		return fmt.Errorf("wake: ensure running: %w", err)
 	}
 
@@ -279,7 +284,9 @@ func (s *Service) Wake(ctx context.Context, agentID string) error {
 	// 30s, so we wait up to 60s for the first touch.
 	heartbeatPath := filepath.Join(agent.HermesHomePath, ".heartbeat")
 	if err := waitForHeartbeat(ctx, heartbeatPath, 60*time.Second); err != nil {
-		_, _ = s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", "")
+		if _, rollbackErr := s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", ""); rollbackErr != nil {
+			slog.Error("wake: rollback to sleeping failed", "agent", agentID, "error", rollbackErr)
+		}
 		return fmt.Errorf("wake: heartbeat wait: %w", err)
 	}
 

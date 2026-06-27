@@ -27,6 +27,9 @@ func (h *AgentHandlers) Register(router gin.IRoutes) {
 	router.GET("/agents/:id/runtime-jobs", h.ListRuntimeJobs)
 	router.POST("/agents/:id/runtime-jobs", h.CreateRuntimeJob)
 	router.GET("/agents/:id/runtime-jobs/:jobId", h.GetRuntimeJob)
+	// Manual sleep/wake — called by web console and admin tools.
+	// The auto-sleep loop (SleepPoller/IdleDetector) calls Service.Sleep/Wake
+	// directly, not through these HTTP endpoints.
 	router.POST("/agents/:id/sleep", h.Sleep)
 	router.POST("/agents/:id/wake", h.Wake)
 	router.DELETE("/agents/:id", h.Delete)
