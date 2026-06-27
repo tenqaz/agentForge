@@ -145,3 +145,57 @@ func TestLoadReadsBrevoSettings(t *testing.T) {
 		t.Fatalf("BrevoBaseURL = %q, want default", cfg.BrevoBaseURL)
 	}
 }
+
+func TestLoadReadsTurnstileConfig(t *testing.T) {
+	t.Setenv("AGENTFORGE_TURNSTILE_SECRET", "")
+	t.Setenv("AGENTFORGE_TURNSTILE_SITEKEY", "")
+	t.Setenv("AGENTFORGE_TURNSTILE_VERIFY_URL", "")
+	t.Setenv("AGENTFORGE_TURNSTILE_EXPECTED_HOSTNAME", "")
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dotEnv := []byte("AGENTFORGE_PUBLIC_BASE_URL=https://app.example.com\n" +
+		"AGENTFORGE_TURNSTILE_SECRET=sec\n" +
+		"AGENTFORGE_TURNSTILE_SITEKEY=site\n")
+	if err := os.WriteFile(".env", dotEnv, 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.TurnstileSecret != "sec" {
+		t.Fatalf("TurnstileSecret = %q, want sec", cfg.TurnstileSecret)
+	}
+	if cfg.TurnstileSitekey != "site" {
+		t.Fatalf("TurnstileSitekey = %q, want site", cfg.TurnstileSitekey)
+	}
+	if cfg.TurnstileVerifyURL != "https://challenges.cloudflare.com/turnstile/v0/siteverify" {
+		t.Fatalf("TurnstileVerifyURL = %q, want default", cfg.TurnstileVerifyURL)
+	}
+	// 未设 EXPECTED_HOSTNAME → 从 PublicBaseURL 推导 host。
+	if cfg.TurnstileExpectedHostname != "app.example.com" {
+		t.Fatalf("TurnstileExpectedHostname = %q, want app.example.com", cfg.TurnstileExpectedHostname)
+	}
+}
+
+func TestLoadTurnstileExpectedHostnameNoneSkipsCheck(t *testing.T) {
+	t.Setenv("AGENTFORGE_TURNSTILE_SECRET", "")
+	t.Setenv("AGENTFORGE_TURNSTILE_SITEKEY", "")
+	t.Setenv("AGENTFORGE_TURNSTILE_VERIFY_URL", "")
+	t.Setenv("AGENTFORGE_TURNSTILE_EXPECTED_HOSTNAME", "none")
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dotEnv := []byte("AGENTFORGE_PUBLIC_BASE_URL=https://app.example.com\n")
+	if err := os.WriteFile(".env", dotEnv, 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.TurnstileExpectedHostname != "none" {
+		t.Fatalf("TurnstileExpectedHostname = %q, want none", cfg.TurnstileExpectedHostname)
+	}
+}

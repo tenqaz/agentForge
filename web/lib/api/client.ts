@@ -19,6 +19,7 @@ import type {
   TemplateResponse,
   TemplatesResponse,
   EmailCodeResponse,
+  TurnstileConfigResponse,
   UserResponse,
 } from "./types";
 
@@ -197,15 +198,19 @@ export function createApiClient(config: ApiClientConfig = {}) {
 
 export type ApiClient = ReturnType<typeof createApiClient>;
 
+export async function getTurnstileConfig(client: ApiClient) {
+  return client.get<TurnstileConfigResponse>("/api/turnstile/config");
+}
+
 export async function getSession(client: ApiClient) {
   return client.get<UserResponse>("/api/session");
 }
 
 export async function registerUser(
   client: ApiClient,
-  payload: { email: string; password: string; emailCode: string },
+  payload: { email: string; password: string; emailCode: string; turnstileToken: string },
 ) {
-  return client.post<UserResponse, { email: string; password: string; emailCode: string }>(
+  return client.post<UserResponse, { email: string; password: string; emailCode: string; turnstileToken: string }>(
     "/api/users",
     payload,
   );
@@ -213,9 +218,9 @@ export async function registerUser(
 
 export async function sendRegistrationEmailCode(
   client: ApiClient,
-  payload: { email: string },
+  payload: { email: string; turnstileToken: string },
 ) {
-  return client.post<EmailCodeResponse, { email: string }>(
+  return client.post<EmailCodeResponse, { email: string; turnstileToken: string }>(
     "/api/registration/email-codes",
     payload,
   );
@@ -453,6 +458,10 @@ export function apiErrorMessage(
       return "Too many incorrect attempts. Please request a new code.";
     case "email_send_failed":
       return "We could not send the email code. Please try again.";
+    case "turnstile_required":
+      return "请完成人机验证后重试。";
+    case "turnstile_invalid":
+      return "人机验证失败，请重试。";
     case "email_conflict":
       return "This email cannot be used right now. Please contact support.";
     case "not_found":

@@ -13,14 +13,15 @@ import (
 )
 
 const (
-	defaultHTTPAddr      = ":8080"
-	defaultPublicBaseURL = "http://localhost:8080"
-	defaultDataDir       = "../../var"
-	defaultSessionSecret = "dev-change-me"
-	defaultHermesImage   = "nousresearch/hermes-agent:v2026.6.5"
-	defaultHermesMemory  = "500m"
-	defaultHermesCPUs    = "0.5"
-	defaultDockerBin     = "docker"
+	defaultHTTPAddr           = ":8080"
+	defaultPublicBaseURL      = "http://localhost:8080"
+	defaultDataDir            = "../../var"
+	defaultSessionSecret      = "dev-change-me"
+	defaultHermesImage        = "nousresearch/hermes-agent:v2026.6.5"
+	defaultHermesMemory       = "500m"
+	defaultHermesCPUs         = "0.5"
+	defaultDockerBin          = "docker"
+	defaultTurnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 )
 
 type Config struct {
@@ -64,6 +65,13 @@ type Config struct {
 	BrevoSenderEmail string
 	BrevoSenderName  string
 	BrevoBaseURL     string
+
+	// Cloudflare Turnstile 人机验证配置。secret 为空时关闭（优雅降级）。
+	// sitekey 由后端通过 /api/turnstile/config 下发前端，必须与 secret 成对配置。
+	TurnstileSecret           string
+	TurnstileSitekey          string
+	TurnstileVerifyURL        string
+	TurnstileExpectedHostname string // 未设 → 从 PublicBaseURL 推导；"none" → 跳过校验
 }
 
 func Load() (Config, error) {
@@ -82,9 +90,14 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("AGENTFORGE_WEIXIN_BASE_URL: %w", err)
 	}
 
+	publicBaseURL := value("AGENTFORGE_PUBLIC_BASE_URL", dotEnv, defaultPublicBaseURL)
+	if err := validateAbsoluteHTTPURL(publicBaseURL); err != nil {
+		return Config{}, fmt.Errorf("AGENTFORGE_PUBLIC_BASE_URL: %w", err)
+	}
+
 	return Config{
 		HTTPAddr:           value("AGENTFORGE_HTTP_ADDR", dotEnv, defaultHTTPAddr),
-		PublicBaseURL:      value("AGENTFORGE_PUBLIC_BASE_URL", dotEnv, defaultPublicBaseURL),
+		PublicBaseURL:      publicBaseURL,
 		DataDir:            dataDir,
 		SQLitePath:         filepath.Join(dataDir, "agentforge.db"),
 		SessionSecret:      value("AGENTFORGE_SESSION_SECRET", dotEnv, defaultSessionSecret),
@@ -116,6 +129,11 @@ func Load() (Config, error) {
 		BrevoSenderEmail: value("AGENTFORGE_BREVO_SENDER_EMAIL", dotEnv, ""),
 		BrevoSenderName:  value("AGENTFORGE_BREVO_SENDER_NAME", dotEnv, ""),
 		BrevoBaseURL:     value("AGENTFORGE_BREVO_BASE_URL", dotEnv, "https://api.brevo.com"),
+
+		TurnstileSecret:           value("AGENTFORGE_TURNSTILE_SECRET", dotEnv, ""),
+		TurnstileSitekey:          value("AGENTFORGE_TURNSTILE_SITEKEY", dotEnv, ""),
+		TurnstileVerifyURL:        value("AGENTFORGE_TURNSTILE_VERIFY_URL", dotEnv, defaultTurnstileVerifyURL),
+		TurnstileExpectedHostname: resolveTurnstileHostname(value("AGENTFORGE_TURNSTILE_EXPECTED_HOSTNAME", dotEnv, ""), publicBaseURL),
 	}, nil
 }
 
@@ -188,4 +206,17 @@ func unquote(value string) string {
 		return value[1 : len(value)-1]
 	}
 	return value
+}
+
+// resolveTurnstileHostname 解析 Turnstile hostname 校验值。
+// explicit 非空时直接用（"none" 表示跳过校验，由 Verifier 判断）；为空时从 publicBaseURL 提取 host。
+func resolveTurnstileHostname(explicit, publicBaseURL string) string {
+	if strings.TrimSpace(explicit) != "" {
+		return strings.TrimSpace(explicit)
+	}
+	parsed, err := url.Parse(strings.TrimSpace(publicBaseURL))
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Hostname()
 }

@@ -171,6 +171,11 @@ export type EmailCodeResponse = {
   ok: boolean;
 };
 
+export type TurnstileConfigResponse = {
+  sitekey: string;
+  enabled: boolean;
+};
+
 export type TemplatesResponse = {
   templates: Template[];
 };
