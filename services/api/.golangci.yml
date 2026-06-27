@@ -2,6 +2,7 @@ run:
   timeout: 5m
   tests: true
   modules-download-mode: readonly
+  go: '1.24'
 
 linters:
   enable:
@@ -32,8 +33,6 @@ linters:
 linters-settings:
   errcheck:
     check-blank: true
-  govet:
-    check-shadowing: true
   gocyclo:
     min-complexity: 15
   revive:
