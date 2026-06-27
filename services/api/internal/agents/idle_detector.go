@@ -1,4 +1,4 @@
-package jobs
+package agents
 
 import (
 	"context"
@@ -9,9 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"agentforge.local/services/api/internal/agents"
 	"agentforge.local/services/api/internal/channels"
-	"agentforge.local/services/api/internal/runtime"
 	"agentforge.local/services/api/internal/weixin"
 )
 
@@ -23,7 +21,7 @@ import (
 //   4. iLink has no pending messages (defence against the race where a
 //      user sent a message but the gateway hasn't pulled it yet).
 type IdleDetector struct {
-	agentRepo     *agents.Repository
+	agentRepo     *Repository
 	channelRepo   *channels.Repository
 	weixinClient  weixin.Client
 	sleepFunc     func(ctx context.Context, agentID string) error
@@ -37,7 +35,7 @@ type IdleDetector struct {
 
 // IdleDetectorDeps is the dependency injection container for IdleDetector.
 type IdleDetectorDeps struct {
-	AgentRepo     *agents.Repository
+	AgentRepo     *Repository
 	ChannelRepo   *channels.Repository
 	WeixinClient  weixin.Client
 	SleepFunc     func(ctx context.Context, agentID string) error
@@ -95,7 +93,7 @@ func (d *IdleDetector) Run(ctx context.Context) {
 }
 
 func (d *IdleDetector) checkOnce(ctx context.Context) {
-	runningAgents, err := d.agentRepo.ListByStatus(ctx, agents.StatusRunning)
+	runningAgents, err := d.agentRepo.ListByStatus(ctx, StatusRunning)
 	if err != nil {
 		slog.Error("idle_detector: list running agents failed", "error", err)
 		return
@@ -158,7 +156,7 @@ func (d *IdleDetector) checkOnce(ctx context.Context) {
 
 // invokeSleep calls the sleep function in a goroutine so one slow Sleep
 // doesn't block the detection loop.
-func (d *IdleDetector) invokeSleep(a agents.Agent) {
+func (d *IdleDetector) invokeSleep(a Agent) {
 	go func(agentID string) {
 		if err := d.sleepFunc(context.Background(), agentID); err != nil {
 			slog.Error("idle_detector: sleep failed",
@@ -169,7 +167,7 @@ func (d *IdleDetector) invokeSleep(a agents.Agent) {
 
 // hasPendingMessages checks iLink for un-consumed messages. It reads the
 // weixin credentials from the agent's .env on NAS.
-func (d *IdleDetector) hasPendingMessages(ctx context.Context, a agents.Agent) (bool, error) {
+func (d *IdleDetector) hasPendingMessages(ctx context.Context, a Agent) (bool, error) {
 	ch, err := d.channelRepo.GetByAgentID(ctx, a.ID)
 	if err != nil || ch.Status != channels.StatusConnected {
 		return false, err

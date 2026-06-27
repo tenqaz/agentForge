@@ -130,18 +130,16 @@ func run() error {
 		HermesMemory: cfg.HermesMemory,
 		HermesCPUs:   cfg.HermesCPUs,
 	})
-	// Auto-sleep components (nil when disabled).
-	var sleepPoller *jobs.SleepPoller
-	var idleDetector *jobs.IdleDetector
+	// Auto-sleep background loops (started directly, not via Supervisor).
 	if cfg.AutoSleepEnabled {
-		sleepPoller = jobs.NewSleepPoller(jobs.SleepPollerDeps{
+		sleepPoller := agents.NewSleepPoller(agents.SleepPollerDeps{
 			AgentRepo:    agentRepo,
 			ChannelRepo:  channelRepo,
 			WeixinClient: weixinClient,
 			WakeFunc:     agentService.Wake,
 			PollInterval: time.Duration(cfg.SleepPollIntervalSec) * time.Second,
 		})
-		idleDetector = jobs.NewIdleDetector(jobs.IdleDetectorDeps{
+		idleDetector := agents.NewIdleDetector(agents.IdleDetectorDeps{
 			AgentRepo:     agentRepo,
 			ChannelRepo:   channelRepo,
 			WeixinClient:  weixinClient,
@@ -150,6 +148,8 @@ func run() error {
 			CheckInterval: time.Duration(cfg.IdleCheckIntervalSec) * time.Second,
 			MaxMisses:     cfg.IdleHeartbeatMisses,
 		})
+		go sleepPoller.Run(ctx)
+		go idleDetector.Run(ctx)
 	}
 
 	supervisor := jobs.NewSupervisor(jobs.SupervisorDependencies{
@@ -157,8 +157,6 @@ func run() error {
 		ChannelJobs:   channelJobs,
 		RuntimeWorker: runtimeWorker,
 		ChannelWorker: channelWorker,
-		SleepPoller:   sleepPoller,
-		IdleDetector:  idleDetector,
 	})
 
 	router := httpapi.NewRouter(httpapi.Dependencies{

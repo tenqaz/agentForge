@@ -1,4 +1,4 @@
-package jobs
+package agents
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"agentforge.local/services/api/internal/agents"
 	"agentforge.local/services/api/internal/channels"
 	"agentforge.local/services/api/internal/runtime"
 	"agentforge.local/services/api/internal/weixin"
@@ -15,7 +14,7 @@ import (
 // SleepPoller periodically checks sleeping agents for new iLink messages
 // and wakes them when a user sends a message.
 type SleepPoller struct {
-	agentRepo    *agents.Repository
+	agentRepo    *Repository
 	channelRepo  *channels.Repository
 	weixinClient weixin.Client
 	wakeFunc     func(ctx context.Context, agentID string) error
@@ -24,7 +23,7 @@ type SleepPoller struct {
 
 // SleepPollerDeps is the dependency injection container for SleepPoller.
 type SleepPollerDeps struct {
-	AgentRepo    *agents.Repository
+	AgentRepo    *Repository
 	ChannelRepo  *channels.Repository
 	WeixinClient weixin.Client
 	WakeFunc     func(ctx context.Context, agentID string) error
@@ -65,7 +64,7 @@ func (p *SleepPoller) Run(ctx context.Context) {
 }
 
 func (p *SleepPoller) pollOnce(ctx context.Context) {
-	sleepingAgents, err := p.agentRepo.ListByStatus(ctx, agents.StatusSleeping)
+	sleepingAgents, err := p.agentRepo.ListByStatus(ctx, StatusSleeping)
 	if err != nil {
 		slog.Error("sleep_poller: list sleeping agents failed", "error", err)
 		return
