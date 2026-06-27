@@ -23,7 +23,7 @@ func (t *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Body != nil {
 		b, _ := io.ReadAll(req.Body)
 		t.gotBody = string(b)
-		req.Body.Close()
+		_ = req.Body.Close()
 	}
 	if t.err != nil {
 		return nil, t.err

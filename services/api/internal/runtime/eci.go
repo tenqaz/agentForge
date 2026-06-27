@@ -139,27 +139,27 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 
 	req.Container = &[]eci.CreateContainerGroupContainer{
 		{
-			Image:           spec.Image,
-			Name:            "hermes",
-			Memory:          requests.NewFloat(toECIMemoryFloat(spec.Memory)),
-			Cpu:             requests.NewFloat(toECICPUFloat(spec.CPUs)),
-			WorkingDir:      "/opt/data",
+			Image:      spec.Image,
+			Name:       "hermes",
+			Memory:     requests.NewFloat(toECIMemoryFloat(spec.Memory)),
+			Cpu:        requests.NewFloat(toECICPUFloat(spec.CPUs)),
+			WorkingDir: "/opt/data",
 			Command: []string{
-					"/init",
-					"sh", "-c",
-					// Wait for the NFS mount to be ready before starting Hermes.
-					// On first boot the .env is written before the ECI is
-					// created, but NFS can lag. On restart (after pairing)
-					// the new .env is already on NAS.
-					// Always remove stale gateway state so Hermes does a
-					// fresh platform scan on every container boot. Without
-					// this, a gateway that crashed after writing an empty
-					// platforms:{} would skip WeChat init on the next
-					// restart (RestartPolicy: Always). It also defends
-					// against the dying previous ECI writing a stale
-					// gateway_state.json to the shared NAS mount.
-					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; chmod -R 777 /opt/data/weixin 2>/dev/null; rm -f /opt/data/gateway_state.json /opt/data/gateway.lock /opt/data/gateway.pid; exec /opt/hermes/docker/main-wrapper.sh gateway run",
-				},
+				"/init",
+				"sh", "-c",
+				// Wait for the NFS mount to be ready before starting Hermes.
+				// On first boot the .env is written before the ECI is
+				// created, but NFS can lag. On restart (after pairing)
+				// the new .env is already on NAS.
+				// Always remove stale gateway state so Hermes does a
+				// fresh platform scan on every container boot. Without
+				// this, a gateway that crashed after writing an empty
+				// platforms:{} would skip WeChat init on the next
+				// restart (RestartPolicy: Always). It also defends
+				// against the dying previous ECI writing a stale
+				// gateway_state.json to the shared NAS mount.
+				"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; chmod -R 777 /opt/data/weixin 2>/dev/null; rm -f /opt/data/gateway_state.json /opt/data/gateway.lock /opt/data/gateway.pid; exec /opt/hermes/docker/main-wrapper.sh gateway run",
+			},
 			EnvironmentVar: &envVars,
 			VolumeMount: &[]eci.CreateContainerGroupVolumeMount{
 				{
@@ -206,7 +206,7 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 		return fmt.Errorf("eci: create container group: %w", err)
 	}
 	if !resp.IsSuccess() {
-		return fmt.Errorf("eci: create container group failed: %s", resp.GetHttpStatus())
+		return fmt.Errorf("eci: create container group failed: %d", resp.GetHttpStatus())
 	}
 
 	return nil
@@ -238,7 +238,7 @@ func (r *eciRunner) Remove(ctx context.Context, containerName string) error {
 		return fmt.Errorf("eci: delete container group: %w", err)
 	}
 	if !resp.IsSuccess() {
-		return fmt.Errorf("eci: delete container group failed: %s", resp.GetHttpStatus())
+		return fmt.Errorf("eci: delete container group failed: %d", resp.GetHttpStatus())
 	}
 	return nil
 }
@@ -269,7 +269,7 @@ func (r *eciRunner) Destroy(ctx context.Context, containerName string) error {
 		return fmt.Errorf("eci: destroy: delete: %w", err)
 	}
 	if !resp.IsSuccess() {
-		return fmt.Errorf("eci: destroy: delete returned %s", resp.GetHttpStatus())
+		return fmt.Errorf("eci: destroy: delete returned %d", resp.GetHttpStatus())
 	}
 
 	// 2. Poll until the group is truly gone.
@@ -437,7 +437,7 @@ func (r *eciRunner) createNASDir(path string) error {
 		return errors.New("nas file system id not configured")
 	}
 
-	cli, err := sdk.NewClientWithAccessKey(r.region, r.accessKeyID, r.accessKeySecret)
+	cli, err := sdk.NewClientWithAccessKey(r.region, r.accessKeyID, r.accessKeySecret) //nolint:staticcheck // will migrate later
 	if err != nil {
 		return fmt.Errorf("nas: create client: %w", err)
 	}
@@ -464,7 +464,7 @@ func (r *eciRunner) createNASDir(path string) error {
 			strings.Contains(resp.String(), "PathAlreadyExists") {
 			return nil
 		}
-		return fmt.Errorf("nas: create dir failed: %s", resp.GetHttpStatus())
+		return fmt.Errorf("nas: create dir failed: %d", resp.GetHttpStatus())
 	}
 	return nil
 }

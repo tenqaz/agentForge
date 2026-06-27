@@ -630,7 +630,7 @@ func readZipFile(file *zip.File) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer reader.Close() //nolint:errcheck // deferred close
 	content, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err

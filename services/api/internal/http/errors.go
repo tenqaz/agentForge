@@ -151,6 +151,7 @@ func (e *requestError) Unwrap() error {
 
 // errorWithStack 包装错误并携带堆栈信息
 type errorWithStack struct {
+	//nolint:errname // internal helper type
 	Err   error
 	Stack []byte
 }

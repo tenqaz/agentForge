@@ -134,7 +134,7 @@ func (c *client) GetBotQRCode(ctx context.Context, req QRCodeRequest) (QRCodeRes
 	if err != nil {
 		return QRCodeResponse{}, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // deferred close
 
 	var parsed QRCodeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
@@ -161,7 +161,7 @@ func (c *client) GetQRCodeStatus(ctx context.Context, req QRStatusRequest) (QRSt
 	if err != nil {
 		return QRStatusResponse{}, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // deferred close
 
 	var parsed QRStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {

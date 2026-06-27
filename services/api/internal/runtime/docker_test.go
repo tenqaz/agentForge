@@ -19,7 +19,7 @@ func TestDockerRunnerEnsureRunningBuildsExpectedCommand(t *testing.T) {
 		t.Fatalf("write stub docker: %v", err)
 	}
 
-	runner := NewDockerRunner(stubPath)
+	runner := NewDockerRunner(stubPath, "")
 	homePath := filepath.Join(workdir, "relative", "..", "hermes-home")
 	spec := ContainerSpec{
 		AgentID:       "agent-internal-id",
@@ -71,7 +71,7 @@ func TestDockerRunnerInspectParsesRunningState(t *testing.T) {
 		t.Fatalf("write stub docker: %v", err)
 	}
 
-	runner := NewDockerRunner(stubPath)
+	runner := NewDockerRunner(stubPath, "")
 	status, err := runner.Inspect(ctx, "agentforge-hermes-agent-1")
 	if err != nil {
 		t.Fatalf("Inspect returned error: %v", err)
@@ -100,7 +100,7 @@ func TestDockerRunnerEnsureRunningStartsExistingStoppedContainer(t *testing.T) {
 		t.Fatalf("write stub docker: %v", err)
 	}
 
-	runner := NewDockerRunner(stubPath)
+	runner := NewDockerRunner(stubPath, "")
 	if err := runner.EnsureRunning(ctx, ContainerSpec{
 		AgentID:    "agent-internal-id",
 		HermesHome: filepath.Join(workdir, "hermes-home"),
@@ -143,7 +143,7 @@ func TestDockerRunnerEnsureRunningNoopsWhenContainerAlreadyRunning(t *testing.T)
 		t.Fatalf("write stub docker: %v", err)
 	}
 
-	runner := NewDockerRunner(stubPath)
+	runner := NewDockerRunner(stubPath, "")
 	if err := runner.EnsureRunning(ctx, ContainerSpec{
 		AgentID:    "agent-internal-id",
 		HermesHome: filepath.Join(workdir, "hermes-home"),
@@ -179,7 +179,7 @@ func TestDockerRunnerRemoveReturnsNotFoundWhenContainerMissing(t *testing.T) {
 	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write stub docker: %v", err)
 	}
-	runner := NewDockerRunner(stubPath)
+	runner := NewDockerRunner(stubPath, "")
 
 	err := runner.Remove(ctx, "agentforge-hermes-missing")
 	if !errors.Is(err, ErrContainerNotFound) {
@@ -195,7 +195,7 @@ func TestDockerRunnerRemoveWrapsOtherErrors(t *testing.T) {
 	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write stub docker: %v", err)
 	}
-	runner := NewDockerRunner(stubPath)
+	runner := NewDockerRunner(stubPath, "")
 
 	err := runner.Remove(ctx, "agentforge-hermes-x")
 	if err == nil {

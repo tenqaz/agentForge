@@ -110,7 +110,7 @@ func (v *SiteVerifyVerifier) Verify(ctx context.Context, token, action string) e
 		// 不在此处 log——由 requireTurnstile 在请求边界统一记录，避免重复日志。
 		return fmt.Errorf("%w: siteverify request: %v", ErrUnavailable, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // deferred close
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%w: siteverify returned status %d", ErrUnavailable, resp.StatusCode)

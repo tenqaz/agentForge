@@ -51,7 +51,7 @@ type ContainerStatus struct {
 }
 
 type dockerRunner struct {
-	dockerBin   string
+	dockerBin    string
 	agentsVolume string // Docker named volume for /data/agents
 }
 

@@ -359,7 +359,7 @@ func copyFileIfExists(source, target string) error {
 	if err != nil {
 		return err
 	}
-	defer input.Close()
+	defer input.Close() //nolint:errcheck // deferred close
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}

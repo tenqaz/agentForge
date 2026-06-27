@@ -173,7 +173,7 @@ func readDotEnv(path string) (map[string]string, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // deferred close
 
 	values := map[string]string{}
 	scanner := bufio.NewScanner(file)

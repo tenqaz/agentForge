@@ -149,9 +149,9 @@ func (r *ChannelRepository) CreateOrReuseConnectJob(ctx context.Context, channel
 		job, err := r.getActiveJobByChannel(ctx, channelID)
 		if errors.Is(err, ErrNotFound) {
 			job, err = r.CreateQueued(ctx, ChannelJob{
-				AgentChannelID: channelID,
+				AgentChannelID:   channelID,
 				PairingSessionID: &session.ID,
-				Type:           TypeConnectWeixin,
+				Type:             TypeConnectWeixin,
 			})
 			return session, job, true, err
 		}
@@ -174,9 +174,9 @@ func (r *ChannelRepository) CreateOrReuseConnectJob(ctx context.Context, channel
 		return channels.PairingSession{}, ChannelJob{}, false, err
 	}
 	job, err := r.CreateQueued(ctx, ChannelJob{
-		AgentChannelID: channelID,
+		AgentChannelID:   channelID,
 		PairingSessionID: &session.ID,
-		Type:           TypeConnectWeixin,
+		Type:             TypeConnectWeixin,
 	})
 	return session, job, true, err
 }

@@ -61,7 +61,7 @@ func (m *BrevoMailer) SendRegistrationCode(ctx context.Context, email, code stri
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // deferred close
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 读取并附带 Brevo 返回的响应体，便于排查认证、发件人、配额等失败原因。
 		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))

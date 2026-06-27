@@ -199,7 +199,7 @@ func (w *RuntimeWorker) processProvisionAgent(ctx context.Context, job runtimeJo
 		CPUs:          w.hermesCPUs,
 	}); err != nil {
 		slog.Error("ECI/container start failed", "error", err, "agentID", agent.ID)
-	return w.failProvision(ctx, job, agent, runtime.ErrCodeContainerStartFailed, err.Error())
+		return w.failProvision(ctx, job, agent, runtime.ErrCodeContainerStartFailed, err.Error())
 	}
 
 	if err := w.transitionAgent(ctx, agent.ID, agent.Status, agentStatusRunning, runtimeID, "", ""); err != nil {
