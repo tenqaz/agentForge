@@ -72,9 +72,14 @@ func (s *Service) SendRegistrationCode(ctx context.Context, email string) error 
 	if s.store.RecentSendCount(normalized, "register", s.now().Add(-RateLimitWindow)) >= MaxSendsPerHour {
 		return ErrCodeRateLimited
 	}
-	code, err := generateCode()
-	if err != nil {
-		return fmt.Errorf("generate verification code: %w", err)
+	// MockMailer 使用固定验证码 123456，其他 Mailer 生成随机验证码
+	code := "123456"
+	if _, isMock := s.mailer.(*MockMailer); !isMock {
+		var err error
+		code, err = generateCode()
+		if err != nil {
+			return fmt.Errorf("generate verification code: %w", err)
+		}
 	}
 	// 先发信成功再写入 store：发信失败不应占用冷却与限流配额，否则用户重试会被
 	// 冷却挡住而无法获取验证码（邮件从未投递却计入了配额）。

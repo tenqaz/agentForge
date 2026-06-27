@@ -142,18 +142,21 @@ func run() error {
 	verificationStore := verification.NewMemoryStore(nil)
 	// 后台周期性清理过期验证码，避免无人发码时记录持续占用内存。
 	go verificationStore.RunCleanup(ctx, 5*time.Minute)
+	var verificationMailer verification.Mailer
 	if cfg.BrevoAPIKey == "" || cfg.BrevoSenderEmail == "" {
-		slog.Warn("Brevo email not configured; registration email codes will fail at runtime",
+		slog.Warn("Brevo email not configured; using mock mailer with fixed code 123456",
 			"api_key_set", cfg.BrevoAPIKey != "",
 			"sender_email_set", cfg.BrevoSenderEmail != "")
+		verificationMailer = verification.NewMockMailer()
+	} else {
+		verificationMailer = verification.NewBrevoMailer(
+			cfg.BrevoAPIKey,
+			cfg.BrevoSenderEmail,
+			cfg.BrevoSenderName,
+			cfg.BrevoBaseURL,
+			nil,
+		)
 	}
-	verificationMailer := verification.NewBrevoMailer(
-		cfg.BrevoAPIKey,
-		cfg.BrevoSenderEmail,
-		cfg.BrevoSenderName,
-		cfg.BrevoBaseURL,
-		nil,
-	)
 	verificationService := verification.NewService(verificationStore, verificationMailer, nil)
 
 	turnstileSvc := turnstile.NewVerifier(
