@@ -6,13 +6,15 @@ import {
   useEffect,
   useState,
   useSyncExternalStore,
+  useRef,
   type FormEvent,
 } from "react";
 import { ArrowRight, Check, Lock, Mail } from "lucide-react";
 
 import { registerWithPassword, sendRegisterEmailCode } from "@/app/register/actions";
 import { useApiClient, useSessionState } from "@/components/app-shell";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage, getTurnstileConfig, type TurnstileConfigResponse } from "@/lib/api";
+import { Turnstile, type TurnstileHandle } from "@/components/turnstile";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import AuthSplit from "@/components/ui/auth-split";
@@ -35,6 +37,15 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileCfg, setTurnstileCfg] = useState<TurnstileConfigResponse | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
+
+  useEffect(() => {
+    getTurnstileConfig(apiClient).then((resp) => {
+      if (resp.ok) setTurnstileCfg(resp.data);
+    });
+  }, [apiClient]);
 
   useEffect(() => {
     if (loading) {
@@ -60,17 +71,26 @@ export default function RegisterPage() {
   async function handleSendCode() {
     setError("");
     setNotice("");
+    if (turnstileCfg?.enabled && turnstileCfg.sitekey && !turnstileToken) {
+      setError("请完成人机验证后重试。");
+      return;
+    }
     setSendingCode(true);
     try {
-      const response = await sendRegisterEmailCode(apiClient, email.trim());
+      const response = await sendRegisterEmailCode(apiClient, email.trim(), turnstileToken);
       if (!response.ok) {
         const retryAfter = Number(response.headers.get("retry-after") ?? "0");
-        if (retryAfter > 0) {
-          setCooldownSeconds(retryAfter);
-        }
+        if (retryAfter > 0) setCooldownSeconds(retryAfter);
         setError(apiErrorMessage(response.error.code, response.error.message));
+        if (response.error.code === "turnstile_invalid") {
+          turnstileRef.current?.reset();
+          setTurnstileToken("");
+        }
         return;
       }
+      // 发码消耗了令牌，reset 让 widget 重新挑战，供后续创建账户使用。
+      turnstileRef.current?.reset();
+      setTurnstileToken("");
       // 与后端 verification.CooldownWindow (60s) 保持一致。
       setCooldownSeconds(60);
       setNotice("验证码已发送，请检查邮箱。");
@@ -87,13 +107,21 @@ export default function RegisterPage() {
       setError("两次输入的密码不一致");
       return;
     }
+    if (turnstileCfg?.enabled && turnstileCfg.sitekey && !turnstileToken) {
+      setError("请完成人机验证后重试。");
+      return;
+    }
     setPending(true);
     setError("");
 
     try {
-      const response = await registerWithPassword(apiClient, email.trim(), password, emailCode.trim());
+      const response = await registerWithPassword(apiClient, email.trim(), password, emailCode.trim(), turnstileToken);
       if (!response.ok) {
         setError(apiErrorMessage(response.error.code, response.error.message));
+        if (response.error.code === "turnstile_invalid") {
+          turnstileRef.current?.reset();
+          setTurnstileToken("");
+        }
         return;
       }
 
@@ -257,6 +285,17 @@ export default function RegisterPage() {
           >
             {error}
           </div>
+        ) : null}
+
+        {turnstileCfg?.enabled && turnstileCfg.sitekey ? (
+          <Turnstile
+            ref={turnstileRef}
+            sitekey={turnstileCfg.sitekey}
+            action="register"
+            onToken={setTurnstileToken}
+            onExpire={() => setTurnstileToken("")}
+            onError={() => setTurnstileToken("")}
+          />
         ) : null}
 
         <Button

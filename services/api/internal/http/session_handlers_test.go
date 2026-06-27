@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"agentforge.local/services/api/internal/auth"
+	"agentforge.local/services/api/internal/turnstile"
 	"github.com/gin-gonic/gin"
 
 	_ "modernc.org/sqlite"
@@ -30,10 +31,7 @@ func TestSessionRoutesLoginCurrentAndLogout(t *testing.T) {
 		t.Fatalf("insert user: %v", err)
 	}
 
-	router := NewRouter(Dependencies{
-		AuthRepository: auth.NewRepository(database),
-		SessionManager: auth.NewSessionManager("test-secret", false),
-	})
+	router := newSessionTestRouter(t, database, nil)
 
 	loginBody := bytes.NewBufferString(`{"email":"user@example.com","password":"secret-password"}`)
 	loginRecorder := httptest.NewRecorder()
@@ -299,5 +297,60 @@ func assertUserResponse(t *testing.T, body []byte, id, email string, role auth.R
 	}
 	if response.User.ID != id || response.User.Email != email || response.User.Role != role {
 		t.Fatalf("response user = %#v", response.User)
+	}
+}
+
+// newSessionTestRouter 装配带 Turnstile 的 session 路由，便于复用。
+func newSessionTestRouter(t *testing.T, database *sql.DB, svc *turnstile.Service) *gin.Engine {
+	t.Helper()
+	if svc == nil {
+		svc = turnstile.NewVerifier("", "", "", "", nil)
+	}
+	return NewRouter(Dependencies{
+		AuthRepository: auth.NewRepository(database),
+		SessionManager: auth.NewSessionManager("test-secret", false),
+		Turnstile:      svc,
+	})
+}
+
+func TestSessionLoginRequiresTurnstileTokenWhenEnabled(t *testing.T) {
+	database := newHTTPTestDB(t)
+	hash, err := auth.HashPassword("secret-password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO users (id, email, password_hash, role) VALUES ('u1', 'user@example.com', ?, 'user');`, hash); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	svc := turnstile.NewVerifier("sec", "site", "", "", nil)
+	router := newSessionTestRouter(t, database, svc)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/sessions",
+		bytes.NewBufferString(`{"email":"user@example.com","password":"secret-password"}`)))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 turnstile_required, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte("turnstile_required")) {
+		t.Fatalf("body = %s, want turnstile_required", recorder.Body.String())
+	}
+}
+
+func TestSessionLoginPassesWhenTurnstileDisabled(t *testing.T) {
+	database := newHTTPTestDB(t)
+	hash, err := auth.HashPassword("secret-password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO users (id, email, password_hash, role) VALUES ('u1', 'user@example.com', ?, 'user');`, hash); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	// 禁用态：不带 turnstileToken 也能登录（向后兼容）。
+	router := newSessionTestRouter(t, database, nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/sessions",
+		bytes.NewBufferString(`{"email":"user@example.com","password":"secret-password"}`)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", recorder.Code, recorder.Body.String())
 	}
 }

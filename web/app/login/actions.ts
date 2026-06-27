@@ -5,12 +5,10 @@ export async function signInWithPassword(
   apiClient: ApiClient,
   email: string,
   password: string,
+  turnstileToken: string,
 ) {
-  return apiClient.post<UserResponse, { email: string; password: string }>(
+  return apiClient.post<UserResponse, { email: string; password: string; turnstileToken: string }>(
     "/api/sessions",
-    {
-      email,
-      password,
-    },
+    { email, password, turnstileToken },
   );
 }

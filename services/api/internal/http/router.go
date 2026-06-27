@@ -8,6 +8,7 @@ import (
 	"agentforge.local/services/api/internal/channels"
 	"agentforge.local/services/api/internal/jobs"
 	"agentforge.local/services/api/internal/templates"
+	"agentforge.local/services/api/internal/turnstile"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +30,7 @@ type Dependencies struct {
 	AuthRepository       AuthRepository
 	SessionManager       *auth.SessionManager
 	VerificationService  VerificationService
+	Turnstile            *turnstile.Service
 	TemplateService      *templates.Service
 	AgentService         *agents.Service
 	RuntimeJobRepository *jobs.RuntimeRepository
@@ -47,11 +49,15 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	api := r.Group("/api")
 	NewHealthHandlers().Register(api)
 
-	if deps.AuthRepository != nil && deps.VerificationService != nil {
-		NewRegistrationHandlers(deps.AuthRepository, deps.VerificationService).Register(api)
+	if deps.Turnstile != nil {
+		NewTurnstileHandlers(deps.Turnstile).Register(api)
 	}
 
-	NewSessionHandlers(deps.AuthRepository, deps.SessionManager).Register(api)
+	if deps.AuthRepository != nil && deps.VerificationService != nil {
+		NewRegistrationHandlers(deps.AuthRepository, deps.VerificationService, deps.Turnstile).Register(api)
+	}
+
+	NewSessionHandlers(deps.AuthRepository, deps.SessionManager, deps.Turnstile).Register(api)
 
 	if deps.TemplateService != nil {
 		NewTemplateHandlers(deps.TemplateService).Register(api)

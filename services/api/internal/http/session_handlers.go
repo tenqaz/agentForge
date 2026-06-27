@@ -5,18 +5,25 @@ import (
 	"net/http"
 
 	"agentforge.local/services/api/internal/auth"
+	"agentforge.local/services/api/internal/turnstile"
 	"github.com/gin-gonic/gin"
 )
 
 type SessionHandlers struct {
 	authRepository AuthRepository
 	sessionManager *auth.SessionManager
+	turnstile      turnstile.Verifier
 }
 
-func NewSessionHandlers(authRepository AuthRepository, sessionManager *auth.SessionManager) *SessionHandlers {
+func NewSessionHandlers(authRepository AuthRepository, sessionManager *auth.SessionManager, t *turnstile.Service) *SessionHandlers {
+	var v turnstile.Verifier = turnstile.DisabledVerifier{}
+	if t != nil {
+		v = t.Verifier
+	}
 	return &SessionHandlers{
 		authRepository: authRepository,
 		sessionManager: sessionManager,
+		turnstile:      v,
 	}
 }
 
@@ -28,10 +35,14 @@ func (h *SessionHandlers) Register(router gin.IRoutes) {
 
 func (h *SessionHandlers) Create(c *gin.Context) {
 	var request struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email          string `json:"email"`
+		Password       string `json:"password"`
+		TurnstileToken string `json:"turnstileToken"`
 	}
 	if !decodeRequest(c, &request) {
+		return
+	}
+	if !requireTurnstile(c, h.turnstile, request.TurnstileToken, "login") {
 		return
 	}
 	user, err := h.authRepository.FindUserByEmail(c.Request.Context(), request.Email)
