@@ -167,6 +167,10 @@ export type UserResponse = {
   user: User;
 };
 
+export type EmailCodeResponse = {
+  ok: boolean;
+};
+
 export type TemplatesResponse = {
   templates: Template[];
 };

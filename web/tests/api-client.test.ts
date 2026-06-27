@@ -6,6 +6,7 @@ import {
   createAdminTemplate,
   createApiClient,
   registerUser,
+  sendRegistrationEmailCode,
 } from "@/lib/api";
 
 describe("createApiClient", () => {
@@ -58,6 +59,7 @@ describe("createApiClient", () => {
         JSON.stringify({
           email: "user@example.com",
           password: "abc12345",
+          emailCode: "123456",
         }),
       );
       return new Response(JSON.stringify({ error: "email_already_exists" }), {
@@ -70,6 +72,7 @@ describe("createApiClient", () => {
     const response = await registerUser(client, {
       email: "user@example.com",
       password: "abc12345",
+      emailCode: "123456",
     });
 
     expect(response.ok).toBe(false);
@@ -79,6 +82,32 @@ describe("createApiClient", () => {
     expect(response.status).toBe(409);
     expect(response.error.code).toBe("email_already_exists");
     expect(response.error.message).toContain("email already exists");
+  });
+
+  it("posts registration email code requests and exposes retry-after headers", async () => {
+    const fetchImpl: typeof fetch = vi.fn(async (input, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : String(input);
+      expect(url).toBe("http://example.test/api/registration/email-codes");
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ email: "user@example.com" }));
+      return new Response(JSON.stringify({ error: "email_code_cooldown" }), {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "retry-after": "60",
+        },
+      });
+    });
+    const client = createApiClient({ fetchImpl, baseUrl: "http://example.test" });
+
+    const response = await sendRegistrationEmailCode(client, { email: "user@example.com" });
+
+    expect(response.ok).toBe(false);
+    if (response.ok) {
+      throw new Error("expected error response");
+    }
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(response.error.code).toBe("email_code_cooldown");
   });
 
   it("passes FormData through without forcing JSON headers", async () => {

@@ -10,7 +10,7 @@ import {
 } from "react";
 import { ArrowRight, Check, Lock, Mail } from "lucide-react";
 
-import { registerWithPassword } from "@/app/register/actions";
+import { registerWithPassword, sendRegisterEmailCode } from "@/app/register/actions";
 import { useApiClient, useSessionState } from "@/components/app-shell";
 import { apiErrorMessage } from "@/lib/api";
 import Button from "@/components/ui/button";
@@ -28,8 +28,13 @@ export default function RegisterPage() {
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [email, setEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   useEffect(() => {
     if (loading) {
@@ -44,21 +49,61 @@ export default function RegisterPage() {
     }
   }, [loading, router, user]);
 
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = window.setTimeout(() => {
+      setCooldownSeconds((value) => value - 1);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldownSeconds]);
+
+  async function handleSendCode() {
+    setError("");
+    setNotice("");
+    setSendingCode(true);
+    try {
+      const response = await sendRegisterEmailCode(apiClient, email.trim());
+      if (!response.ok) {
+        const retryAfter = Number(response.headers.get("retry-after") ?? "0");
+        if (retryAfter > 0) {
+          setCooldownSeconds(retryAfter);
+        }
+        setError(apiErrorMessage(response.error.code, response.error.message));
+        return;
+      }
+      // 与后端 verification.CooldownWindow (60s) 保持一致。
+      setCooldownSeconds(60);
+      setNotice("验证码已发送，请检查邮箱。");
+    } catch {
+      setError("网络异常，请检查连接后重试。");
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (password !== confirmPassword) {
+      setError("两次输入的密码不一致");
+      return;
+    }
     setPending(true);
     setError("");
 
-    const response = await registerWithPassword(apiClient, email.trim(), password);
-    if (!response.ok) {
-      setError(apiErrorMessage(response.error.code, response.error.message));
-      setPending(false);
-      return;
-    }
+    try {
+      const response = await registerWithPassword(apiClient, email.trim(), password, emailCode.trim());
+      if (!response.ok) {
+        setError(apiErrorMessage(response.error.code, response.error.message));
+        return;
+      }
 
-    setPending(false);
-    router.push("/login?registered=1");
-    router.refresh();
+      router.push("/login?registered=1");
+      router.refresh();
+    } catch {
+      setError("网络异常，请检查连接后重试。");
+    } finally {
+      setPending(false);
+    }
   }
 
   const side = (
@@ -116,6 +161,36 @@ export default function RegisterPage() {
         </div>
 
         <div className="field">
+          <label className="field-label" htmlFor="register-email-code">验证码</label>
+          <div className="input-wrap" style={{ display: "flex", gap: 8 }}>
+            <Input
+              id="register-email-code"
+              name="emailCode"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="6 位验证码"
+              required
+              value={emailCode}
+              onChange={(event) => setEmailCode(event.target.value)}
+              style={{ flex: 1 }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!hydrated || sendingCode || cooldownSeconds > 0}
+              onClick={() => void handleSendCode()}
+            >
+              {sendingCode
+                ? "发送中…"
+                : cooldownSeconds > 0
+                  ? `${cooldownSeconds} 秒后重发`
+                  : "发送验证码"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="field">
           <label className="field-label" htmlFor="register-password">密码</label>
           <div className="input-wrap">
             <span className="input-prefix" aria-hidden="true">
@@ -134,6 +209,39 @@ export default function RegisterPage() {
             />
           </div>
         </div>
+
+        <div className="field">
+          <label className="field-label" htmlFor="register-confirm-password">确认密码</label>
+          <div className="input-wrap">
+            <span className="input-prefix" aria-hidden="true">
+              <Lock size={16} strokeWidth={1.75} />
+            </span>
+            <Input
+              id="register-confirm-password"
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              placeholder="再次输入密码"
+              className="has-prefix"
+              required
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+            />
+          </div>
+        </div>
+
+        {notice ? (
+          <div
+            role="status"
+            className="card"
+            style={{
+              padding: "10px 12px",
+              fontSize: 13,
+            }}
+          >
+            {notice}
+          </div>
+        ) : null}
 
         {error ? (
           <div
