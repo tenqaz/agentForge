@@ -23,13 +23,13 @@ const (
 )
 
 var (
-	ErrInvalidEmail         = errors.New("invalid email")
-	ErrCodeCooldown         = errors.New("email code cooldown")
-	ErrCodeRateLimited      = errors.New("email code rate limited")
-	ErrCodeInvalid          = errors.New("email code invalid")
-	ErrCodeExpired          = errors.New("email code expired")
+	ErrInvalidEmail          = errors.New("invalid email")
+	ErrCodeCooldown          = errors.New("email code cooldown")
+	ErrCodeRateLimited       = errors.New("email code rate limited")
+	ErrCodeInvalid           = errors.New("email code invalid")
+	ErrCodeExpired           = errors.New("email code expired")
 	ErrCodeAttemptsExhausted = errors.New("email code attempts exhausted")
-	ErrEmailSendFailed      = errors.New("email send failed")
+	ErrEmailSendFailed       = errors.New("email send failed")
 )
 
 // Mailer 负责投递验证码邮件，由具体实现（如 Brevo）封装外部邮件 API。

@@ -127,7 +127,7 @@ func (r *Repository) FindUserByEmail(ctx context.Context, email string) (User, e
 	if err != nil {
 		return User{}, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred close
 
 	var matches []User
 	for rows.Next() {

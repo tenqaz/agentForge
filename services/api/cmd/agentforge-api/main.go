@@ -56,7 +56,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer database.Close()
+	defer database.Close() //nolint:errcheck // deferred close
 
 	migrationsDir, err := resolveMigrationsDir()
 	if err != nil {

@@ -190,7 +190,7 @@ func copyFile(source, target string) error {
 	if err != nil {
 		return err
 	}
-	defer input.Close()
+	defer input.Close() //nolint:errcheck // deferred close
 
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
@@ -200,7 +200,7 @@ func copyFile(source, target string) error {
 	if err != nil {
 		return err
 	}
-	defer output.Close()
+	defer output.Close() //nolint:errcheck // deferred close
 
 	if _, err := io.Copy(output, input); err != nil {
 		return err
@@ -294,7 +294,7 @@ func removeAllNFS(root string) error {
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			// If we can't access a path, skip it — we'll retry.
-			return nil
+			return nil //nolint:nilerr // intentionally skip inaccessible paths
 		}
 		paths = append(paths, path)
 		return nil

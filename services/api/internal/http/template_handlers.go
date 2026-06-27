@@ -250,7 +250,7 @@ func (h *TemplateHandlers) AddSkill(c *gin.Context) {
 		writeErrorWithMsg(c, http.StatusBadRequest, "invalid_request", "missing or invalid 'file' field: "+err.Error())
 		return
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // deferred close
 	archive, err := io.ReadAll(file)
 	if err != nil {
 		writeErrorWithMsg(c, http.StatusBadRequest, "invalid_request", "failed to read file: "+err.Error())
@@ -401,7 +401,6 @@ func requireAdminUser(c *gin.Context) (auth.User, bool) {
 	return user, true
 }
 
-
 func readMultipartSkillArchive(header *multipart.FileHeader) (templates.SkillArchive, error) {
 	if header == nil {
 		return templates.SkillArchive{}, fmt.Errorf("%w: missing file header", templates.ErrInvalidInput)
@@ -410,7 +409,7 @@ func readMultipartSkillArchive(header *multipart.FileHeader) (templates.SkillArc
 	if err != nil {
 		return templates.SkillArchive{}, fmt.Errorf("%w: failed to open skill file: %v", templates.ErrInvalidInput, err)
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // deferred close
 	content, err := io.ReadAll(file)
 	if err != nil {
 		return templates.SkillArchive{}, fmt.Errorf("%w: failed to read skill file: %v", templates.ErrInvalidInput, err)

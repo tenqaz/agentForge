@@ -7,6 +7,8 @@ import (
 )
 
 // errorWithStack 包装错误并携带堆栈信息
+//
+//nolint:errname // internal helper type
 type errorWithStack struct {
 	Err   error
 	Stack []byte

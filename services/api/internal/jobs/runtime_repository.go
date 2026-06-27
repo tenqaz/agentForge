@@ -109,7 +109,7 @@ func (r *RuntimeRepository) ListByAgent(ctx context.Context, agentID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred close
 
 	var runtimeJobs []RuntimeJob
 	for rows.Next() {

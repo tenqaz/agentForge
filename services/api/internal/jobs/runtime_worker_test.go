@@ -561,7 +561,7 @@ func listRuntimeEvents(t *testing.T, database *sql.DB, agentID string) []string 
 	if err != nil {
 		t.Fatalf("query runtime events: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred close
 	var events []string
 	for rows.Next() {
 		var eventType string

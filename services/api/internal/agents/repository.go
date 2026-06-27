@@ -138,7 +138,7 @@ func (r *Repository) list(ctx context.Context, db queryer, ownerUserID string) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred close
 
 	var agents []Agent
 	for rows.Next() {

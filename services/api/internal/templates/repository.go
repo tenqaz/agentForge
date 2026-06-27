@@ -90,7 +90,7 @@ func (r *Repository) ListTemplates(ctx context.Context, statuses ...Status) ([]T
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred close
 
 	var templates []Template
 	for rows.Next() {
@@ -258,7 +258,7 @@ func (r *Repository) ListSkills(ctx context.Context, templateID string) ([]Skill
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred close
 
 	var skills []Skill
 	for rows.Next() {

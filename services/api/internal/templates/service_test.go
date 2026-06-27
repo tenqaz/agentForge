@@ -392,9 +392,9 @@ func TestServiceAddSkillArchiveWritesWholeSkillDirectory(t *testing.T) {
 	}
 
 	skill, err := service.AddSkillArchive(ctx, template.ID, mustZipSkill(t, map[string]string{
-		"handoff/SKILL.md":         "---\nname: handoff\ndescription: Escalation path\n---\n# SKILL\nEscalate to humans when needed.\n",
-		"handoff/references/a.md":  "reference",
-		"handoff/scripts/run.sh":   "#!/bin/sh\nexit 0\n",
+		"handoff/SKILL.md":        "---\nname: handoff\ndescription: Escalation path\n---\n# SKILL\nEscalate to humans when needed.\n",
+		"handoff/references/a.md": "reference",
+		"handoff/scripts/run.sh":  "#!/bin/sh\nexit 0\n",
 	}))
 	if err != nil {
 		t.Fatalf("AddSkillArchive returned error: %v", err)

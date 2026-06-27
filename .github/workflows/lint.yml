@@ -1,0 +1,32 @@
+name: Lint
+
+on:
+  pull_request:
+    paths:
+      - 'services/api/**/*.go'
+      - 'services/api/go.mod'
+      - 'services/api/go.sum'
+      - 'services/api/.golangci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/api/**/*.go'
+
+permissions:
+  contents: read
+
+jobs:
+  golangci:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: services/api/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          working-directory: services/api

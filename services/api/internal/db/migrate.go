@@ -69,7 +69,7 @@ func applyMigration(ctx context.Context, database *sql.DB, migrationsDir, file s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // rollback on error path
 
 	if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
 		return err

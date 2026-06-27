@@ -1,0 +1,42 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unparam
+    - gocritic
+    - gosec
+    - bodyclose
+    - nilerr
+  settings:
+    errcheck:
+      check-blank: true
+    gosec:
+      excludes:
+        - G124
+        - G304
+  exclusions:
+    rules:
+      - path: '_test\.go'
+        linters:
+          - gosec
+          - unparam
+          - unused
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

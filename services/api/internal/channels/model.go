@@ -30,15 +30,15 @@ var (
 )
 
 type Channel struct {
-	ID               string `json:"id"`
-	AgentID          string `json:"agentId"`
-	ChannelType      Type   `json:"channelType"`
-	Status           Status `json:"status"`
+	ID                string `json:"id"`
+	AgentID           string `json:"agentId"`
+	ChannelType       Type   `json:"channelType"`
+	Status            Status `json:"status"`
 	ExternalAccountID string `json:"externalAccountId"`
-	LastErrorCode    string `json:"lastErrorCode"`
-	LastErrorMessage string `json:"lastErrorMessage"`
-	CreatedAt        string `json:"createdAt"`
-	UpdatedAt        string `json:"updatedAt"`
+	LastErrorCode     string `json:"lastErrorCode"`
+	LastErrorMessage  string `json:"lastErrorMessage"`
+	CreatedAt         string `json:"createdAt"`
+	UpdatedAt         string `json:"updatedAt"`
 }
 
 type PairingSession struct {

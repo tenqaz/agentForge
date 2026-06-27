@@ -128,7 +128,7 @@ func (r *Repository) ListPairingSessions(ctx context.Context, channelID string) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // deferred close
 	var sessions []PairingSession
 	for rows.Next() {
 		var session PairingSession

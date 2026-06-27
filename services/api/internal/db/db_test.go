@@ -15,7 +15,7 @@ func TestOpenAppliesSQLitePragmas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer database.Close()
+	defer database.Close() //nolint:errcheck // deferred close
 
 	var journalMode string
 	if err := database.QueryRowContext(ctx, "PRAGMA journal_mode;").Scan(&journalMode); err != nil {
@@ -48,7 +48,7 @@ func TestMigrateIsIdempotentAndEnforcesForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer database.Close()
+	defer database.Close() //nolint:errcheck // deferred close
 
 	migrationsDir := filepath.Join("..", "..", "migrations")
 	if err := Migrate(ctx, database, migrationsDir); err != nil {
@@ -73,7 +73,7 @@ func TestMigrateEnforcesSpecStatusConstraints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer database.Close()
+	defer database.Close() //nolint:errcheck // deferred close
 
 	if err := Migrate(ctx, database, filepath.Join("..", "..", "migrations")); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
