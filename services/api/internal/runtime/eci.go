@@ -117,7 +117,7 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 	// Inject credentials and model config from local hermes-home files
 	// (also on NAS, but env vars guarantee availability immediately).
 	envFile := spec.HermesHome + "/.env"
-	if extra, err := readEnvFile(envFile); err == nil {
+	if extra, err := ReadEnvFile(envFile); err == nil {
 		for k, v := range extra {
 			if strings.HasPrefix(k, "WEIXIN_") || strings.HasPrefix(k, "GATEWAY_") {
 				envVars = append(envVars, eci.CreateContainerGroupEnvironmentVar{Key: k, Value: v})
@@ -158,7 +158,7 @@ func (r *eciRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) error
 					// restart (RestartPolicy: Always). It also defends
 					// against the dying previous ECI writing a stale
 					// gateway_state.json to the shared NAS mount.
-					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; chmod -R 777 /opt/data/weixin 2>/dev/null; rm -f /opt/data/gateway_state.json /opt/data/gateway.lock /opt/data/gateway.pid; exec /opt/hermes/docker/main-wrapper.sh gateway run",
+					"while [ ! -f /opt/data/.env ]; do sleep 0.5; done; chmod -R 777 /opt/data/weixin 2>/dev/null; rm -f /opt/data/gateway_state.json /opt/data/gateway.lock /opt/data/gateway.pid /opt/data/.heartbeat; (while true; do touch /opt/data/.heartbeat; sleep 30; done) & exec /opt/hermes/docker/main-wrapper.sh gateway run",
 				},
 			EnvironmentVar: &envVars,
 			VolumeMount: &[]eci.CreateContainerGroupVolumeMount{
@@ -470,7 +470,8 @@ func (r *eciRunner) createNASDir(path string) error {
 }
 
 // readEnvFile reads a .env file and returns its key-value pairs.
-func readEnvFile(path string) (map[string]string, error) {
+// ReadEnvFile reads a .env file and returns its key-value pairs.
+func ReadEnvFile(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

@@ -51,6 +51,35 @@ func (r *Repository) ListByOwner(ctx context.Context, ownerUserID string) ([]Age
 	return r.list(ctx, r.database, ownerUserID)
 }
 
+// ListByStatus returns all agents currently in the given status.
+func (r *Repository) ListByStatus(ctx context.Context, status Status) ([]Agent, error) {
+	rows, err := r.database.QueryContext(ctx, `
+		SELECT id, owner_user_id, template_id, template_version, name, status, runtime_id,
+		       hermes_home_path, last_error_code, last_error_message, created_at, updated_at
+		FROM agents
+		WHERE status = ?
+		ORDER BY created_at ASC, id ASC;
+	`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var agents []Agent
+	for rows.Next() {
+		var agent Agent
+		if err := rows.Scan(
+			&agent.ID, &agent.OwnerUserID, &agent.TemplateID, &agent.TemplateVersion, &agent.Name,
+			&agent.Status, &agent.RuntimeID, &agent.HermesHomePath, &agent.LastErrorCode,
+			&agent.LastErrorMessage, &agent.CreatedAt, &agent.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		agents = append(agents, agent)
+	}
+	return agents, rows.Err()
+}
+
 func (r *Repository) TemplateVersion(ctx context.Context, db queryer, templateID string) (int, error) {
 	var version int
 	err := db.QueryRowContext(ctx, `

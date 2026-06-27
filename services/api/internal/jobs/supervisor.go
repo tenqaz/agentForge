@@ -33,6 +33,11 @@ type SupervisorDependencies struct {
 	WorkerID      string
 	PollInterval  time.Duration
 	LeaseTTL      time.Duration
+
+	// Optional auto-sleep components. When non-nil they are started as
+	// background goroutines inside Run().
+	SleepPoller  *SleepPoller
+	IdleDetector *IdleDetector
 }
 
 type Supervisor struct {
@@ -43,6 +48,9 @@ type Supervisor struct {
 	workerID      string
 	pollInterval  time.Duration
 	leaseTTL      time.Duration
+
+	sleepPoller  *SleepPoller
+	idleDetector *IdleDetector
 }
 
 func NewSupervisor(deps SupervisorDependencies) *Supervisor {
@@ -66,6 +74,8 @@ func NewSupervisor(deps SupervisorDependencies) *Supervisor {
 		workerID:      workerID,
 		pollInterval:  pollInterval,
 		leaseTTL:      leaseTTL,
+		sleepPoller:   deps.SleepPoller,
+		idleDetector:  deps.IdleDetector,
 	}
 }
 
@@ -73,6 +83,15 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if s.runtimeJobs == nil || s.channelJobs == nil || s.runtimeWorker == nil || s.channelWorker == nil {
 		return errors.New("supervisor dependencies are incomplete")
 	}
+
+	// Start auto-sleep goroutines (independent of the job-claim loop).
+	if s.sleepPoller != nil {
+		go s.sleepPoller.Run(ctx)
+	}
+	if s.idleDetector != nil {
+		go s.idleDetector.Run(ctx)
+	}
+
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
 

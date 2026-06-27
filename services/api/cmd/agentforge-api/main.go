@@ -98,7 +98,7 @@ func run() error {
 			runner = runtime.NewDockerRunner(cfg.DockerBin, cfg.DockerAgentsVolume)
 			slog.Info("Using Docker runner")
 		}
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode)
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode, cfg.HermesImage, cfg.HermesMemory, cfg.HermesCPUs)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)
@@ -130,11 +130,35 @@ func run() error {
 		HermesMemory: cfg.HermesMemory,
 		HermesCPUs:   cfg.HermesCPUs,
 	})
+	// Auto-sleep components (nil when disabled).
+	var sleepPoller *jobs.SleepPoller
+	var idleDetector *jobs.IdleDetector
+	if cfg.AutoSleepEnabled {
+		sleepPoller = jobs.NewSleepPoller(jobs.SleepPollerDeps{
+			AgentRepo:    agentRepo,
+			ChannelRepo:  channelRepo,
+			WeixinClient: weixinClient,
+			WakeFunc:     agentService.Wake,
+			PollInterval: time.Duration(cfg.SleepPollIntervalSec) * time.Second,
+		})
+		idleDetector = jobs.NewIdleDetector(jobs.IdleDetectorDeps{
+			AgentRepo:     agentRepo,
+			ChannelRepo:   channelRepo,
+			WeixinClient:  weixinClient,
+			SleepFunc:     agentService.Sleep,
+			IdleTimeout:   time.Duration(cfg.IdleTimeoutMinutes) * time.Minute,
+			CheckInterval: time.Duration(cfg.IdleCheckIntervalSec) * time.Second,
+			MaxMisses:     cfg.IdleHeartbeatMisses,
+		})
+	}
+
 	supervisor := jobs.NewSupervisor(jobs.SupervisorDependencies{
 		RuntimeJobs:   runtimeJobs,
 		ChannelJobs:   channelJobs,
 		RuntimeWorker: runtimeWorker,
 		ChannelWorker: channelWorker,
+		SleepPoller:   sleepPoller,
+		IdleDetector:  idleDetector,
 	})
 
 	router := httpapi.NewRouter(httpapi.Dependencies{

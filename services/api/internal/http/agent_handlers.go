@@ -27,6 +27,8 @@ func (h *AgentHandlers) Register(router gin.IRoutes) {
 	router.GET("/agents/:id/runtime-jobs", h.ListRuntimeJobs)
 	router.POST("/agents/:id/runtime-jobs", h.CreateRuntimeJob)
 	router.GET("/agents/:id/runtime-jobs/:jobId", h.GetRuntimeJob)
+	router.POST("/agents/:id/sleep", h.Sleep)
+	router.POST("/agents/:id/wake", h.Wake)
 	router.DELETE("/agents/:id", h.Delete)
 }
 
@@ -148,6 +150,50 @@ func (h *AgentHandlers) GetRuntimeJob(c *gin.Context) {
 		return
 	}
 	writeJSON(c, http.StatusOK, runtimeJobResponse{Job: newRuntimeJobDTO(job)})
+}
+
+// Sleep puts a running agent into sleeping state (destroy container, stop billing).
+func (h *AgentHandlers) Sleep(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
+	if !ok {
+		return
+	}
+	user, _ := UserFromContext(c)
+
+	if err := h.service.Sleep(c.Request.Context(), agent.ID); err != nil {
+		slog.ErrorContext(c.Request.Context(), "agent sleep failed",
+			"agent_id", agent.ID,
+			"actor_user_id", user.ID,
+			"error", err)
+		writeAgentError(c, err)
+		return
+	}
+	slog.InfoContext(c.Request.Context(), "agent sleep succeeded",
+		"agent_id", agent.ID,
+		"actor_user_id", user.ID)
+	c.Status(http.StatusOK)
+}
+
+// Wake starts a sleeping agent's container and transitions it to running.
+func (h *AgentHandlers) Wake(c *gin.Context) {
+	agent, ok := h.authorizeAgent(c)
+	if !ok {
+		return
+	}
+	user, _ := UserFromContext(c)
+
+	if err := h.service.Wake(c.Request.Context(), agent.ID); err != nil {
+		slog.ErrorContext(c.Request.Context(), "agent wake failed",
+			"agent_id", agent.ID,
+			"actor_user_id", user.ID,
+			"error", err)
+		writeAgentError(c, err)
+		return
+	}
+	slog.InfoContext(c.Request.Context(), "agent wake succeeded",
+		"agent_id", agent.ID,
+		"actor_user_id", user.ID)
+	c.Status(http.StatusOK)
 }
 
 func (h *AgentHandlers) Delete(c *gin.Context) {

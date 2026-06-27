@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"agentforge.local/services/api/internal/weixin"
@@ -57,6 +58,14 @@ type Config struct {
 	ECINASHost         string // NAS 挂载点地址
 	ECINASPath         string // NAS 上根路径，默认 "/"
 	ECINASFileSystemID string // NAS 文件系统 ID
+
+	// Auto sleep / wake settings.
+	AutoSleepEnabled       bool
+	IdleTimeoutMinutes     int
+	SleepPollIntervalSec   int
+	IdleCheckIntervalSec   int
+	IdleHeartbeatMisses    int
+	WakeHeartbeatTimeoutSec int
 }
 
 func Load() (Config, error) {
@@ -104,6 +113,13 @@ func Load() (Config, error) {
 		ECINASHost:         value("AGENTFORGE_ECI_NAS_HOST", dotEnv, ""),
 		ECINASPath:         value("AGENTFORGE_ECI_NAS_PATH", dotEnv, "/"),
 		ECINASFileSystemID: value("AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID", dotEnv, ""),
+
+		AutoSleepEnabled:        boolValue("AGENTFORGE_AUTO_SLEEP_ENABLED", dotEnv, false),
+		IdleTimeoutMinutes:      intValue("AGENTFORGE_IDLE_TIMEOUT", dotEnv, 10),
+		SleepPollIntervalSec:    intValue("AGENTFORGE_SLEEP_POLL_INTERVAL", dotEnv, 5),
+		IdleCheckIntervalSec:    intValue("AGENTFORGE_IDLE_CHECK_INTERVAL", dotEnv, 60),
+		IdleHeartbeatMisses:     intValue("AGENTFORGE_IDLE_HEARTBEAT_MISSES", dotEnv, 3),
+		WakeHeartbeatTimeoutSec: intValue("AGENTFORGE_WAKE_HEARTBEAT_TIMEOUT", dotEnv, 60),
 	}, nil
 }
 
@@ -133,6 +149,26 @@ func value(key string, dotEnv map[string]string, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func boolValue(key string, dotEnv map[string]string, fallback bool) bool {
+	s := strings.ToLower(strings.TrimSpace(value(key, dotEnv, "")))
+	if s == "" {
+		return fallback
+	}
+	return s == "true" || s == "1" || s == "yes" || s == "on"
+}
+
+func intValue(key string, dotEnv map[string]string, fallback int) int {
+	s := strings.TrimSpace(value(key, dotEnv, ""))
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 0 {
+		return fallback
+	}
+	return v
 }
 
 func readDotEnv(path string) (map[string]string, error) {

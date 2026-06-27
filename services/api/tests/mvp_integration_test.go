@@ -146,7 +146,7 @@ func newMVPFixture(t *testing.T) mvpFixture {
 	runtimeJobs := jobs.NewRuntimeRepository(database)
 	agentRepo := agents.NewRepository(database)
 	runner := &integrationRunner{}
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, dataDir)
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, dataDir, "docker", "", "", "")
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)

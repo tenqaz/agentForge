@@ -1,6 +1,7 @@
 package weixin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -85,9 +86,19 @@ type QRStatusResponse struct {
 	ILinkUserID  string `json:"ilink_user_id,omitempty"`
 }
 
+// MsgCheckRequest is the input for HasPendingMessages.
+type MsgCheckRequest struct {
+	BaseURL string // WEIXIN_BASE_URL, defaults to DefaultBaseURL
+	Token   string // WEIXIN_TOKEN (obtained after pairing)
+}
+
 type Client interface {
 	GetBotQRCode(ctx context.Context, req QRCodeRequest) (QRCodeResponse, error)
 	GetQRCodeStatus(ctx context.Context, req QRStatusRequest) (QRStatusResponse, error)
+	// HasPendingMessages checks whether there are un-consumed messages
+	// on the iLink queue. It always passes an empty cursor so it never
+	// consumes messages — it is a pure read-only probe.
+	HasPendingMessages(ctx context.Context, req MsgCheckRequest) (bool, error)
 }
 
 type client struct {
@@ -201,4 +212,52 @@ func setILinkHeaders(req *http.Request) {
 
 func stringifyInt(value int) string {
 	return fmt.Sprintf("%d", value)
+}
+
+// HasPendingMessages checks the iLink getupdates endpoint with an empty
+// cursor to see if there are any un-consumed messages. It does NOT save
+// the returned cursor, so messages are never consumed by this call —
+// they remain on the queue for the real Gateway to pick up.
+func (c *client) HasPendingMessages(ctx context.Context, req MsgCheckRequest) (bool, error) {
+	baseURL := strings.TrimRight(req.BaseURL, "/")
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
+	endpoint := baseURL + apiPathPrefix + "/getupdates"
+
+	body := map[string]interface{}{
+		"get_updates_buf": "",
+		"base_info": map[string]string{
+			"channel_version": "2.2.0",
+		},
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return false, fmt.Errorf("weixin HasPendingMessages: marshal body: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return false, fmt.Errorf("weixin HasPendingMessages: new request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+req.Token)
+	httpReq.Header.Set("AuthorizationType", "ilink_bot_token")
+	setILinkHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return false, fmt.Errorf("weixin HasPendingMessages: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Msgs []json.RawMessage `json:"msgs"`
+		Ret  int               `json:"ret"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("weixin HasPendingMessages: decode: %w", err)
+	}
+
+	return len(result.Msgs) > 0 && result.Ret == 0, nil
 }
