@@ -101,7 +101,7 @@ func Load() (Config, error) {
 		HermesMemory:       value("AGENTFORGE_HERMES_MEMORY", dotEnv, defaultHermesMemory),
 		HermesCPUs:         value("AGENTFORGE_HERMES_CPUS", dotEnv, defaultHermesCPUs),
 		DockerBin:          defaultDockerBin,
-		DockerAgentsVolume: value("AGENTFORGE_DOCKER_AGENTS_VOLUME", dotEnv, "agentforge_agentforge-agents-data"),
+		DockerAgentsVolume: lookupValue("AGENTFORGE_DOCKER_AGENTS_VOLUME", dotEnv, "agentforge_agentforge-agents-data"),
 		WeixinBaseURL:      weixinBaseURL,
 		ModelDefault:       value("AGENTFORGE_MODEL_DEFAULT", dotEnv, ""),
 		ModelProvider:      value("AGENTFORGE_MODEL_PROVIDER", dotEnv, ""),
@@ -161,6 +161,26 @@ func value(key string, dotEnv map[string]string, fallback string) string {
 	}
 	if v := strings.TrimSpace(dotEnv[key]); v != "" {
 		return v
+	}
+	return fallback
+}
+
+// lookupValue is like value but distinguishes "unset" (returns fallback) from
+// "explicitly empty" (returns ""). value treats both as unset, which makes it
+// impossible to disable a setting that carries a non-empty default.
+//
+// AGENTFORGE_DOCKER_AGENTS_VOLUME relies on this: an explicit empty value
+// switches the Docker runner from a named volume to bind-mounting the host
+// hermes-home. That is the only mode that works when the API runs on the host
+// via `go run` — AgentForge writes the weixin credentials to the host
+// filesystem, which a Docker-managed named volume never sees, so the Hermes
+// container would boot with "No messaging platforms enabled" and never reply.
+func lookupValue(key string, dotEnv map[string]string, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return strings.TrimSpace(v)
+	}
+	if v, ok := dotEnv[key]; ok {
+		return strings.TrimSpace(v)
 	}
 	return fallback
 }
