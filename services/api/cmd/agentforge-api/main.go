@@ -21,7 +21,6 @@ import (
 	"agentforge.local/services/api/internal/jobs"
 	"agentforge.local/services/api/internal/runtime"
 	"agentforge.local/services/api/internal/templates"
-	"agentforge.local/services/api/internal/turnstile"
 	"agentforge.local/services/api/internal/verification"
 	"agentforge.local/services/api/internal/weixin"
 )
@@ -77,30 +76,30 @@ func run() error {
 	agentRepo := agents.NewRepository(database)
 	templateService := templates.NewService(templateRepo, templateStore, agentRepo)
 	var runner runtime.Runner
-	switch cfg.RunnerMode {
-	case "eci":
-		eciRunner, err := runtime.NewECIRunner(runtime.ECIConfig{
-			Region:          cfg.ECIRegion,
-			AccessKeyID:     cfg.ECIAccessKeyID,
-			AccessKeySecret: cfg.ECIAccessKeySecret,
-			SecurityGroupID: cfg.ECISecurityGroupID,
-			VSwitchID:       cfg.ECIVSwitchID,
-			ImageCacheID:    cfg.ECIImageCacheID,
-			EIPInstanceID:   cfg.ECIEIPInstanceID,
-			NASHost:         cfg.ECINASHost,
-			NASPath:         cfg.ECINASPath,
-			NASFileSystemID: cfg.ECINASFileSystemID,
-		})
-		if err != nil {
-			return fmt.Errorf("eci runner: %w", err)
+		switch cfg.RunnerMode {
+		case "eci":
+			eciRunner, err := runtime.NewECIRunner(runtime.ECIConfig{
+				Region:           cfg.ECIRegion,
+				AccessKeyID:      cfg.ECIAccessKeyID,
+				AccessKeySecret:  cfg.ECIAccessKeySecret,
+				SecurityGroupID:  cfg.ECISecurityGroupID,
+				VSwitchID:        cfg.ECIVSwitchID,
+				ImageCacheID:     cfg.ECIImageCacheID,
+				EIPInstanceID:    cfg.ECIEIPInstanceID,
+				NASHost:          cfg.ECINASHost,
+				NASPath:          cfg.ECINASPath,
+				NASFileSystemID:  cfg.ECINASFileSystemID,
+			})
+			if err != nil {
+				return fmt.Errorf("eci runner: %w", err)
+			}
+			runner = eciRunner
+			slog.Info("Using ECI runner", "region", cfg.ECIRegion)
+		default:
+			runner = runtime.NewDockerRunner(cfg.DockerBin, cfg.DockerAgentsVolume)
+			slog.Info("Using Docker runner")
 		}
-		runner = eciRunner
-		slog.Info("Using ECI runner", "region", cfg.ECIRegion)
-	default:
-		runner = runtime.NewDockerRunner(cfg.DockerBin, cfg.DockerAgentsVolume)
-		slog.Info("Using Docker runner")
-	}
-	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode)
+	agentService := agents.NewService(database, agentRepo, runtimeJobs, runner, cfg.DataDir, cfg.RunnerMode, cfg.HermesImage, cfg.HermesMemory, cfg.HermesCPUs)
 	channelRepo := channels.NewRepository(database)
 	channelService := channels.NewService(database, channelRepo)
 	channelJobs := jobs.NewChannelRepository(database)
@@ -132,6 +131,28 @@ func run() error {
 		HermesMemory: cfg.HermesMemory,
 		HermesCPUs:   cfg.HermesCPUs,
 	})
+	// Auto-sleep background loops (started directly, not via Supervisor).
+	if cfg.AutoSleepEnabled {
+		sleepPoller := agents.NewSleepPoller(agents.SleepPollerDeps{
+			AgentRepo:    agentRepo,
+			ChannelRepo:  channelRepo,
+			WeixinClient: weixinClient,
+			WakeFunc:     agentService.Wake,
+			PollInterval: time.Duration(cfg.SleepPollIntervalSec) * time.Second,
+		})
+		idleDetector := agents.NewIdleDetector(agents.IdleDetectorDeps{
+			AgentRepo:     agentRepo,
+			ChannelRepo:   channelRepo,
+			WeixinClient:  weixinClient,
+			SleepFunc:     agentService.Sleep,
+			IdleTimeout:   time.Duration(cfg.IdleTimeoutMinutes) * time.Minute,
+			CheckInterval: time.Duration(cfg.IdleCheckIntervalSec) * time.Second,
+			MaxMisses:     cfg.IdleHeartbeatMisses,
+		})
+		go sleepPoller.Run(ctx)
+		go idleDetector.Run(ctx)
+	}
+
 	supervisor := jobs.NewSupervisor(jobs.SupervisorDependencies{
 		RuntimeJobs:   runtimeJobs,
 		ChannelJobs:   channelJobs,
@@ -159,23 +180,10 @@ func run() error {
 	}
 	verificationService := verification.NewService(verificationStore, verificationMailer, nil)
 
-	turnstileSvc := turnstile.NewVerifier(
-		cfg.TurnstileSecret,
-		cfg.TurnstileSitekey,
-		cfg.TurnstileExpectedHostname,
-		cfg.TurnstileVerifyURL,
-		nil,
-	)
-	if cfg.TurnstileSecret != "" && cfg.TurnstileSitekey == "" {
-		slog.Warn("Turnstile secret set but sitekey empty; login will be rejected by frontend",
-			"secret_set", cfg.TurnstileSecret != "", "sitekey_set", cfg.TurnstileSitekey != "")
-	}
-
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		AuthRepository:       authRepo,
 		SessionManager:       sessionManager,
 		VerificationService:  verificationService,
-		Turnstile:            turnstileSvc,
 		TemplateService:      templateService,
 		AgentService:         agentService,
 		RuntimeJobRepository: runtimeJobs,

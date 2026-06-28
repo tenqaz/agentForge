@@ -7,21 +7,21 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"agentforge.local/services/api/internal/weixin"
 )
 
 const (
-	defaultHTTPAddr           = ":8080"
-	defaultPublicBaseURL      = "http://localhost:8080"
-	defaultDataDir            = "../../var"
-	defaultSessionSecret      = "dev-change-me"
-	defaultHermesImage        = "nousresearch/hermes-agent:v2026.6.5"
-	defaultHermesMemory       = "500m"
-	defaultHermesCPUs         = "0.5"
-	defaultDockerBin          = "docker"
-	defaultTurnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+	defaultHTTPAddr      = ":8080"
+	defaultPublicBaseURL = "http://localhost:8080"
+	defaultDataDir       = "../../var"
+	defaultSessionSecret = "dev-change-me"
+	defaultHermesImage   = "nousresearch/hermes-agent:v2026.6.5"
+	defaultHermesMemory  = "500m"
+	defaultHermesCPUs    = "0.5"
+	defaultDockerBin     = "docker"
 )
 
 type Config struct {
@@ -59,19 +59,20 @@ type Config struct {
 	ECINASPath         string // NAS 上根路径，默认 "/"
 	ECINASFileSystemID string // NAS 文件系统 ID
 
+	// Auto sleep / wake settings.
+	AutoSleepEnabled        bool
+	IdleTimeoutMinutes      int
+	SleepPollIntervalSec    int
+	IdleCheckIntervalSec    int
+	IdleHeartbeatMisses     int
+	WakeHeartbeatTimeoutSec int
+
 	// Brevo 事务邮件配置，用于发送注册验证码邮件。全部可选；未配置 API key 或
 	// 发件人邮箱时，发码端点在运行时返回 email_send_failed（500），不影响启动。
 	BrevoAPIKey      string
 	BrevoSenderEmail string
 	BrevoSenderName  string
 	BrevoBaseURL     string
-
-	// Cloudflare Turnstile 人机验证配置。secret 为空时关闭（优雅降级）。
-	// sitekey 由后端通过 /api/turnstile/config 下发前端，必须与 secret 成对配置。
-	TurnstileSecret           string
-	TurnstileSitekey          string
-	TurnstileVerifyURL        string
-	TurnstileExpectedHostname string // 未设 → 从 PublicBaseURL 推导；"none" → 跳过校验
 }
 
 func Load() (Config, error) {
@@ -90,14 +91,9 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("AGENTFORGE_WEIXIN_BASE_URL: %w", err)
 	}
 
-	publicBaseURL := value("AGENTFORGE_PUBLIC_BASE_URL", dotEnv, defaultPublicBaseURL)
-	if err := validateAbsoluteHTTPURL(publicBaseURL); err != nil {
-		return Config{}, fmt.Errorf("AGENTFORGE_PUBLIC_BASE_URL: %w", err)
-	}
-
 	return Config{
 		HTTPAddr:           value("AGENTFORGE_HTTP_ADDR", dotEnv, defaultHTTPAddr),
-		PublicBaseURL:      publicBaseURL,
+		PublicBaseURL:      value("AGENTFORGE_PUBLIC_BASE_URL", dotEnv, defaultPublicBaseURL),
 		DataDir:            dataDir,
 		SQLitePath:         filepath.Join(dataDir, "agentforge.db"),
 		SessionSecret:      value("AGENTFORGE_SESSION_SECRET", dotEnv, defaultSessionSecret),
@@ -125,15 +121,19 @@ func Load() (Config, error) {
 		ECINASPath:         value("AGENTFORGE_ECI_NAS_PATH", dotEnv, "/"),
 		ECINASFileSystemID: value("AGENTFORGE_ECI_NAS_FILE_SYSTEM_ID", dotEnv, ""),
 
-		BrevoAPIKey:      value("AGENTFORGE_BREVO_API_KEY", dotEnv, ""),
-		BrevoSenderEmail: value("AGENTFORGE_BREVO_SENDER_EMAIL", dotEnv, ""),
-		BrevoSenderName:  value("AGENTFORGE_BREVO_SENDER_NAME", dotEnv, ""),
-		BrevoBaseURL:     value("AGENTFORGE_BREVO_BASE_URL", dotEnv, "https://api.brevo.com"),
 
-		TurnstileSecret:           value("AGENTFORGE_TURNSTILE_SECRET", dotEnv, ""),
-		TurnstileSitekey:          value("AGENTFORGE_TURNSTILE_SITEKEY", dotEnv, ""),
-		TurnstileVerifyURL:        value("AGENTFORGE_TURNSTILE_VERIFY_URL", dotEnv, defaultTurnstileVerifyURL),
-		TurnstileExpectedHostname: resolveTurnstileHostname(value("AGENTFORGE_TURNSTILE_EXPECTED_HOSTNAME", dotEnv, ""), publicBaseURL),
+			AutoSleepEnabled:        boolValue("AGENTFORGE_AUTO_SLEEP_ENABLED", dotEnv, false),
+			IdleTimeoutMinutes:      intValue("AGENTFORGE_IDLE_TIMEOUT", dotEnv, 10),
+			SleepPollIntervalSec:    intValue("AGENTFORGE_SLEEP_POLL_INTERVAL", dotEnv, 5),
+			IdleCheckIntervalSec:    intValue("AGENTFORGE_IDLE_CHECK_INTERVAL", dotEnv, 60),
+			IdleHeartbeatMisses:     intValue("AGENTFORGE_IDLE_HEARTBEAT_MISSES", dotEnv, 3),
+			WakeHeartbeatTimeoutSec: intValue("AGENTFORGE_WAKE_HEARTBEAT_TIMEOUT", dotEnv, 60),
+
+			BrevoAPIKey:      value("AGENTFORGE_BREVO_API_KEY", dotEnv, ""),
+			BrevoSenderEmail: value("AGENTFORGE_BREVO_SENDER_EMAIL", dotEnv, ""),
+			BrevoSenderName:  value("AGENTFORGE_BREVO_SENDER_NAME", dotEnv, ""),
+			BrevoBaseURL:     value("AGENTFORGE_BREVO_BASE_URL", dotEnv, "https://api.brevo.com"),
+
 	}, nil
 }
 
@@ -163,6 +163,26 @@ func value(key string, dotEnv map[string]string, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func boolValue(key string, dotEnv map[string]string, fallback bool) bool {
+	s := strings.ToLower(strings.TrimSpace(value(key, dotEnv, "")))
+	if s == "" {
+		return fallback
+	}
+	return s == "true" || s == "1" || s == "yes" || s == "on"
+}
+
+func intValue(key string, dotEnv map[string]string, fallback int) int {
+	s := strings.TrimSpace(value(key, dotEnv, ""))
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 0 {
+		return fallback
+	}
+	return v
 }
 
 func readDotEnv(path string) (map[string]string, error) {
@@ -206,17 +226,4 @@ func unquote(value string) string {
 		return value[1 : len(value)-1]
 	}
 	return value
-}
-
-// resolveTurnstileHostname 解析 Turnstile hostname 校验值。
-// explicit 非空时直接用（"none" 表示跳过校验，由 Verifier 判断）；为空时从 publicBaseURL 提取 host。
-func resolveTurnstileHostname(explicit, publicBaseURL string) string {
-	if strings.TrimSpace(explicit) != "" {
-		return strings.TrimSpace(explicit)
-	}
-	parsed, err := url.Parse(strings.TrimSpace(publicBaseURL))
-	if err != nil || parsed.Host == "" {
-		return ""
-	}
-	return parsed.Hostname()
 }

@@ -114,7 +114,16 @@ func (r *dockerRunner) EnsureRunning(ctx context.Context, spec ContainerSpec) er
 		}
 		args = append(args, "-v", homePath+":/opt/data")
 	}
-	args = append(args, spec.Image, "gateway", "run")
+	args = append(args, spec.Image,
+		"sh", "-c",
+		// Clean stale gateway state and heartbeat on every boot, then
+		// start a liveness heartbeat loop (touch .heartbeat every 30s)
+		// before exec-ing the gateway. The heartbeat file is read by
+		// agentForge's IdleDetector to confirm the gateway process is alive.
+		"rm -f $HERMES_HOME/gateway_state.json $HERMES_HOME/gateway.lock $HERMES_HOME/gateway.pid $HERMES_HOME/.heartbeat; "+
+			"(while true; do touch $HERMES_HOME/.heartbeat; sleep 30; done) & "+
+			"exec /opt/hermes/docker/main-wrapper.sh gateway run",
+	)
 
 	output, err := exec.CommandContext(ctx, r.dockerBin, args...).CombinedOutput()
 	if err != nil {

@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"agentforge.local/services/api/internal/jobs"
 	"agentforge.local/services/api/internal/runtime"
@@ -20,9 +23,14 @@ type Service struct {
 	runner      runtime.Runner
 	dataDir     string
 	runnerMode  string
+
+	// Global defaults used when recreating containers (Wake).
+	hermesImage  string
+	hermesMemory string
+	hermesCPUs   string
 }
 
-func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, runner runtime.Runner, dataDir, runnerMode string) *Service {
+func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.RuntimeRepository, runner runtime.Runner, dataDir, runnerMode, hermesImage, hermesMemory, hermesCPUs string) *Service {
 	return &Service{
 		database:    database,
 		repository:  repository,
@@ -30,6 +38,9 @@ func NewService(database *sql.DB, repository *Repository, runtimeJobs *jobs.Runt
 		runner:      runner,
 		dataDir:     dataDir,
 		runnerMode:  runnerMode,
+		hermesImage: hermesImage,
+		hermesMemory: hermesMemory,
+		hermesCPUs:  hermesCPUs,
 	}
 }
 
@@ -205,4 +216,102 @@ func (s *Service) failWith(ctx context.Context, agentID, code string, original e
 		return errors.Join(original, fmt.Errorf("mark agent delete failed: %w", markErr))
 	}
 	return original
+}
+
+// Sleep destroys the agent's container and transitions its status from
+// running to sleeping. If destroying the container fails, the agent stays
+// in running so IdleDetector can retry on the next tick — it is never
+// forced into error by a sleep failure.
+func (s *Service) Sleep(ctx context.Context, agentID string) error {
+	agent, err := s.repository.Get(ctx, agentID)
+	if err != nil {
+		return fmt.Errorf("sleep: get agent: %w", err)
+	}
+	if agent.Status != StatusRunning {
+		return fmt.Errorf("sleep: agent not running, current status: %s", agent.Status)
+	}
+
+	containerName := runtime.DefaultContainerName(agentID)
+	if err := s.runner.Destroy(ctx, containerName); err != nil {
+		return fmt.Errorf("sleep: destroy container: %w", err)
+	}
+
+	// Clean up heartbeat so a stale file doesn't fool the next Wake.
+	if err := os.Remove(filepath.Join(agent.HermesHomePath, ".heartbeat")); err != nil && !os.IsNotExist(err) {
+		slog.Warn("sleep: remove heartbeat", "agent", agentID, "error", err)
+	}
+
+	if _, err := s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", ""); err != nil {
+		return fmt.Errorf("sleep: transition to sleeping: %w", err)
+	}
+	return nil
+}
+
+// Wake creates a container for a sleeping agent, waits for the gateway to
+// confirm startup (heartbeat file appears), then transitions the agent to
+// running. If any step fails, the agent goes back to sleeping for a retry.
+func (s *Service) Wake(ctx context.Context, agentID string) error {
+	agent, err := s.repository.Get(ctx, agentID)
+	if err != nil {
+		return fmt.Errorf("wake: get agent: %w", err)
+	}
+	if agent.Status != StatusSleeping {
+		return fmt.Errorf("wake: agent not sleeping, current status: %s", agent.Status)
+	}
+
+	// sleeping → waking
+	if _, err := s.repository.TransitionStatus(ctx, agentID, StatusWaking, "", "", ""); err != nil {
+		return fmt.Errorf("wake: transition to waking: %w", err)
+	}
+
+	// Spin up the container.
+	if err := s.runner.EnsureRunning(ctx, runtime.ContainerSpec{
+		AgentID:    agentID,
+		HermesHome: agent.HermesHomePath,
+		Image:      s.hermesImage,
+		Memory:     s.hermesMemory,
+		CPUs:       s.hermesCPUs,
+	}); err != nil {
+		// Start failed — go back to sleeping so SleepPoller retries.
+		if _, rollbackErr := s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", ""); rollbackErr != nil {
+			slog.Error("wake: rollback to sleeping failed", "agent", agentID, "error", rollbackErr)
+		}
+		return fmt.Errorf("wake: ensure running: %w", err)
+	}
+
+	// Wait for the gateway to confirm it has started. The heartbeat
+	// background loop in the container command touches .heartbeat every
+	// 30s, so we wait up to 60s for the first touch.
+	heartbeatPath := filepath.Join(agent.HermesHomePath, ".heartbeat")
+	if err := waitForHeartbeat(ctx, heartbeatPath, 60*time.Second); err != nil {
+		if _, rollbackErr := s.repository.TransitionStatus(ctx, agentID, StatusSleeping, "", "", ""); rollbackErr != nil {
+			slog.Error("wake: rollback to sleeping failed", "agent", agentID, "error", rollbackErr)
+		}
+		return fmt.Errorf("wake: heartbeat wait: %w", err)
+	}
+
+	// waking → running — now visible to IdleDetector.
+	if _, err := s.repository.TransitionStatus(ctx, agentID, StatusRunning, "", "", ""); err != nil {
+		return fmt.Errorf("wake: transition to running: %w", err)
+	}
+	return nil
+}
+
+// waitForHeartbeat blocks until the heartbeat file exists or the timeout
+// expires, polling every 500ms.
+func waitForHeartbeat(ctx context.Context, path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for heartbeat file %q", path)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }

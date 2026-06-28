@@ -1,0 +1,12 @@
+-- The agents.status CHECK constraint on older databases may not include
+-- 'sleeping' and 'waking'. SQLite does not support ALTER TABLE ... DROP
+-- CHECK or ALTER CHECK, and recreating the entire table is too risky for
+-- a minor constraint change (column list must exactly match 001_initial).
+--
+-- Instead we rely on code-level validation: agents.Status.CanTransitionTo()
+-- enforces valid state transitions, and the CHECK is treated as advisory
+-- only on fresh databases created by 001_initial.sql (which may or may
+-- not include sleeping/waking depending on the schema version).
+--
+-- This file exists to record that the migration was considered and
+-- intentionally left as a no-op.

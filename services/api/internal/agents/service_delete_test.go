@@ -67,7 +67,9 @@ func newServiceForDelete(t *testing.T, agentID string, status Status, runner run
 	homePath := filepath.Join(dataDir, "agents", agentID, "hermes-home")
 	insertAgentFixtureWithHome(t, database, agentID, "user-1", status, homePath)
 	runtimeJobs := jobs.NewRuntimeRepository(database)
-	svc := NewService(database, repository, runtimeJobs, runner, dataDir, "docker")
+
+	svc := NewService(database, repository, runtimeJobs, runner, dataDir, "docker", "", "", "")
+
 	return svc, database, homePath
 }
 
@@ -127,7 +129,9 @@ func TestDeleteReturnsNotFoundForMissingAgent(t *testing.T) {
 	database := newAgentsTestDB(t)
 	repository := NewRepository(database)
 	runtimeJobs := jobs.NewRuntimeRepository(database)
-	svc := NewService(database, repository, runtimeJobs, runner, t.TempDir(), "docker")
+
+	svc := NewService(database, repository, runtimeJobs, runner, t.TempDir(), "docker", "", "", "")
+
 
 	err := svc.Delete(context.Background(), "agent-missing")
 	if !errors.Is(err, ErrNotFound) {

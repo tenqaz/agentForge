@@ -11,6 +11,8 @@ const (
 	StatusRunning      Status = "running"
 	StatusStopped      Status = "stopped"
 	StatusError        Status = "error"
+	StatusSleeping     Status = "sleeping"
+	StatusWaking       Status = "waking"
 )
 
 var (
@@ -68,8 +70,9 @@ var transitions = map[Status]map[Status]struct{}{
 		StatusError:   {},
 	},
 	StatusRunning: {
-		StatusStopped: {},
-		StatusError:   {},
+		StatusStopped:   {},
+		StatusError:     {},
+		StatusSleeping:  {},
 	},
 	StatusStopped: {
 		StatusStarting: {},
@@ -77,6 +80,13 @@ var transitions = map[Status]map[Status]struct{}{
 	StatusError: {
 		StatusProvisioning: {},
 		StatusStarting:     {},
+	},
+	StatusSleeping: {
+		StatusWaking: {},
+	},
+	StatusWaking: {
+		StatusRunning:  {},
+		StatusSleeping: {},
 	},
 }
 
@@ -101,10 +111,13 @@ func (s Status) CanRestartRuntime() bool {
 // CanDelete reports whether an agent in this status is eligible to be
 // deleted. Only stable states are eligible; provisioning/starting are
 // rejected to avoid races with RuntimeWorker. error is included to allow
-// retries after a partially-completed deletion.
+// retries after a partially-completed deletion. sleeping/waking are
+// included because no container is running (or it's starting and can be
+// force-deleted).
 func (s Status) CanDelete() bool {
 	switch s {
-	case StatusCreating, StatusRunning, StatusStopped, StatusError:
+	case StatusCreating, StatusRunning, StatusStopped, StatusError,
+		StatusSleeping, StatusWaking:
 		return true
 	default:
 		return false
